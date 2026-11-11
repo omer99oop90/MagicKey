@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documented critical storage boundary (3.8 GB available on `/dev/block/sda37` / 100% full).
   - Validated Android FUSE filesystem attributes (symlink restrictions, synthetic `noexec` permission behavior).
   - Confirmed available build tools: Git `2.56.0`, Rust & Cargo `1.99.1`, Clang `21.1.8`, OpenJDK `21.0.13`, Python `3.14.10`, Android `aapt`, `apksigner`, `zipalign`.
+- **Technical Verification & Hardware Clarification Audit:**
+  - Re-audited hardware: Confirmed `10,601.6 MiB` usable Linux RAM from 12 GB physical chip, `4,096.0 MiB` zRAM swap, and dynamic storage fluctuation between 3.86 GiB and 11.12 GiB on `/dev/block/sda37`.
+  - Audited Git failure: Identified initial `git commit` exit code 128 caused by unset author identity (`u0_a604@localhost.(none)`), resolved via repository-local configuration.
+  - Preserved project directory skeleton across all 18 module directories using `.gitkeep`.
+  - Clarified Flutter SDK readiness: Confirmed Flutter SDK and Dart are not installed locally and that Flutter cannot compile APKs directly on an Android host; APK compilation is strictly targeted to CI/CD or desktop workstations while pure format logic remains locally testable.
+  - Established concrete numerical security thresholds: 100:1 Zip-bomb ratio, 50 MB single-entry extraction cap, 10,000 archive entry cap, and 20 MB text highlight streaming limit.
 - **Master Technical Blueprint (`PROJECT_BLUEPRINT.md`):**
   - Defined core mission: *Select a file. Identify it. Open it.*
   - Enforced strict anti-scope boundaries (no file manager, editor, converter, cloud platform, AI, or app launcher).
