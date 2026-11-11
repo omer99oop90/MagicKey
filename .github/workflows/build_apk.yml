@@ -23,9 +23,15 @@ jobs:
       - name: Set up Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run Rust Core Tests
+      - name: Run Rust Core Unit & Integration Tests
         working-directory: core
         run: cargo test --verbose
+
+      - name: Build Host Rust Library for Dart FFI Testing
+        working-directory: core
+        run: |
+          cargo build --release
+          cp ../target/release/libmagickey_core.so ../app/libmagickey_core.so
 
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
@@ -40,65 +46,36 @@ jobs:
           flutter doctor -v
           flutter pub get
 
-      - name: Run Flutter Unit Tests
+      - name: Run Flutter & Live Dart:FFI Runtime Tests
         working-directory: app
         run: flutter test --verbose
 
-      - name: Verify Native ARM64 jniLibs Packaging
+      - name: Verify Committed Android Project & JNI Packaging
         run: |
-          ls -la app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so
+          echo "Verifying committed Android project structure (source of truth)..."
+          ls -la app/android/
+          ls -la app/android/app/
+          ls -la app/android/gradle/wrapper/
+          echo "Verifying ARM64 native library in jniLibs:"
+          ls -lh app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so
           file app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so
+          chmod +x app/android/gradlew
 
-      - name: Configure Modern Android Scaffolding & Custom Integrations
+      - name: Build Release ARM64 Android APK from Committed Project
         working-directory: app
         run: |
-          echo "Backing up custom Android integration files..."
-          mkdir -p /tmp/magickey_custom
-          cp -r android/app/src/main/AndroidManifest.xml /tmp/magickey_custom/
-          cp -r android/app/src/main/kotlin/com/magickey/app/MainActivity.kt /tmp/magickey_custom/
-          cp -r android/app/src/main/jniLibs /tmp/magickey_custom/
-
-          echo "Generating clean modern Android platform directory via Flutter..."
-          rm -rf android
-          flutter create --platforms=android --org com.magickey .
-
-          echo "Restoring custom Manifest, Kotlin MainActivity, and native jniLibs..."
-          cp /tmp/magickey_custom/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          mkdir -p android/app/src/main/kotlin/com/magickey/app
-          cp /tmp/magickey_custom/MainActivity.kt android/app/src/main/kotlin/com/magickey/app/MainActivity.kt
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp -r /tmp/magickey_custom/jniLibs/* android/app/src/main/jniLibs/
-
-          echo "Configuring jniLibs sourceSet and ARM64 ABI filter in android/app/build.gradle..."
-          python3 -c "
-          with open('android/app/build.gradle', 'r') as f:
-              content = f.read()
-
-          if 'main.jniLibs.srcDirs' not in content:
-              content = content.replace('defaultConfig {', '''defaultConfig {
-                  ndk {
-                      abiFilters 'arm64-v8a'
-                  }''')
-              content = content.replace('android {', '''android {
-              sourceSets {
-                  main.jniLibs.srcDirs = ['src/main/jniLibs']
-              }''')
-
-          with open('android/app/build.gradle', 'w') as f:
-              f.write(content)
-          "
-          chmod +x android/gradlew
-
-      - name: Build Release ARM64 Android APK
-        working-directory: app
-        run: |
+          # Builds directly from the committed app/android without deleting or recreating anything
           flutter build apk --release --target-platform android-arm64
 
-      - name: Verify APK Structure & Native Lib
+      - name: Verify APK Structure, Native Lib & SHA-256
         run: |
           APK_PATH="app/build/app/outputs/flutter-apk/app-release.apk"
           echo "Found APK at: $APK_PATH"
           ls -lh "$APK_PATH"
+          echo "=========================================================="
+          echo "SHA-256 Checksum:"
+          sha256sum "$APK_PATH"
+          echo "=========================================================="
           echo "Listing APK contents for ARM64 native library:"
           unzip -l "$APK_PATH" | grep -E "libmagickey_core.so|classes.dex"
 

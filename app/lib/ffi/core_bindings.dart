@@ -98,12 +98,18 @@ class CoreBindings {
 
   static DynamicLibrary _loadLibrary() {
     if (Platform.isAndroid || Platform.isLinux) {
-      try {
-        return DynamicLibrary.open('libmagickey_core.so');
-      } catch (_) {
-        // Fallback to absolute or current execution path
-        return DynamicLibrary.process();
+      final candidates = [
+        'libmagickey_core.so',
+        './libmagickey_core.so',
+        '../target/release/libmagickey_core.so',
+        '../../target/release/libmagickey_core.so',
+      ];
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (_) {}
       }
+      return DynamicLibrary.process();
     } else if (Platform.isWindows) {
       return DynamicLibrary.open('magickey_core.dll');
     } else if (Platform.isMacOS || Platform.isIOS) {
@@ -202,6 +208,20 @@ class CoreBindings {
       }
     } finally {
       calloc.free(bufferPtr);
+    }
+  }
+
+  /// Retrieves the complete format registry definitions from Rust core.
+  List<dynamic> getRegistry() {
+    final resPtr = _getRegistryJson();
+    if (resPtr.address == 0) {
+      throw StateError('Rust core returned null pointer for getRegistryJson');
+    }
+    try {
+      final jsonStr = resPtr.toDartString();
+      return jsonDecode(jsonStr) as List<dynamic>;
+    } finally {
+      _freeString(resPtr);
     }
   }
 }
