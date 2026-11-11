@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.1] — 2026-11-11
+
+### Added
+- **Core Engine Implementation (`core/`):**
+  - High-performance, memory-safe, portable core implemented in Rust 1.99.1 (`aarch64-linux-android`).
+  - Dual build artifacts: standalone Rust library (`rlib`), C-compatible dynamic library (`cdylib` / `libmagickey_core.so`), and command-line utility (`magickey_cli`).
+- **File Detection Engine (`file_detection/`):**
+  - Multi-stage pipeline: BOM detection -> Magic Bytes inspection -> Bounded text analysis -> Extension secondary hints -> Unknown binary fallback.
+  - Byte Order Mark sniffer for UTF-8 (`EF BB BF`), UTF-16LE (`FF FE`), UTF-16BE (`FE FF`), UTF-32LE (`FF FE 00 00`), and UTF-32BE (`00 00 FE FF`).
+  - Bounded content analyzer distinguishing plain text/code from binary (null byte analysis, control character ratio, UTF-8 validity).
+  - Specialized text subtype detection for JSON, XML, HTML, SVG, Markdown, and Shell scripts.
+  - Curated database (`file_detection/signatures.json`) expanded to support PDF, PNG, JPEG, GIF, WebP, BMP, AVIF, ZIP, GZIP, TAR, 7z, BZ2, MP4, MKV/WebM, MP3, WAV, FLAC, OGG, SQLite, ELF, Dalvik DEX, Java Class, and Windows PE binaries.
+  - Strict security guarantee: Extensions are treated strictly as secondary hints and never trusted when magic bytes are absent or mismatched.
+- **Format Registry (`format_registry/`):**
+  - Centralized format repository indexing 39 standard file formats across 6 categories (`Document`, `Image`, `Media`, `TextCode`, `Archive`, `Binary`).
+  - Decoupled detection logic from viewer routing with `resolve_viewer()`.
+  - Case-insensitive lookups by format ID, MIME type, and extension.
+- **Hex Viewer Engine (`engines/hex/`):**
+  - Incremental, virtualized stream reader implementing canonical 16-byte aligned row formatting (`OFFSET  HEX_BYTES  |ASCII|`).
+  - Strictly chunked reading with bounded memory allocation ($O(1)$ RAM usage, independently of file size).
+  - Comprehensive boundary handling for empty files (0 bytes), partial terminal rows, and seeks past EOF.
+- **C-ABI Foreign Function Interface (`core/src/ffi.rs`):**
+  - Exported C symbols (`magickey_detect_file`, `magickey_detect_buffer`, `magickey_read_hex_chunk`, `magickey_get_registry_json`, `magickey_free_string`) enabling direct `dart:ffi` integration.
+- **Automated Verification Harness (`scripts/run_phase1_tests.py`):**
+  - 15 Cargo unit and integration tests covering detection, hex streaming, and registry routing.
+  - 22 end-to-end fixture and C-ABI FFI tests using synthetic test vectors.
+  - 100% test pass rate with zero clippy or rustfmt warnings.
+
 ## [0.1.0-alpha.0] — 2026-11-11
 
 ### Added

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "signatures": [
     {
       "id": "pdf",
@@ -69,6 +69,18 @@
       ]
     },
     {
+      "id": "avif",
+      "name": "AV1 Image File Format",
+      "category": "image",
+      "mime": "image/avif",
+      "extensions": ["avif"],
+      "engine": "image",
+      "magic": [
+        { "offset": 4, "bytes": "6674797061766966" },
+        { "offset": 4, "bytes": "6674797061766973" }
+      ]
+    },
+    {
       "id": "zip",
       "name": "ZIP Archive",
       "category": "archive",
@@ -103,6 +115,28 @@
       ]
     },
     {
+      "id": "7z",
+      "name": "7-Zip Archive",
+      "category": "archive",
+      "mime": "application/x-7z-compressed",
+      "extensions": ["7z"],
+      "engine": "archive",
+      "magic": [
+        { "offset": 0, "bytes": "377ABCAF271C" }
+      ]
+    },
+    {
+      "id": "bzip2",
+      "name": "Bzip2 Compressed Archive",
+      "category": "archive",
+      "mime": "application/x-bzip2",
+      "extensions": ["bz2"],
+      "engine": "archive",
+      "magic": [
+        { "offset": 0, "bytes": "425A68" }
+      ]
+    },
+    {
       "id": "mp4",
       "name": "MPEG-4 Video",
       "category": "media",
@@ -111,6 +145,17 @@
       "engine": "media",
       "magic": [
         { "offset": 4, "bytes": "66747970" }
+      ]
+    },
+    {
+      "id": "mkv",
+      "name": "Matroska / WebM Video",
+      "category": "media",
+      "mime": "video/x-matroska",
+      "extensions": ["mkv", "webm"],
+      "engine": "media",
+      "magic": [
+        { "offset": 0, "bytes": "1A45DFA3" }
       ]
     },
     {
@@ -160,6 +205,17 @@
       ]
     },
     {
+      "id": "sqlite",
+      "name": "SQLite 3 Database",
+      "category": "binary",
+      "mime": "application/vnd.sqlite3",
+      "extensions": ["sqlite", "db", "sqlite3"],
+      "engine": "hex",
+      "magic": [
+        { "offset": 0, "bytes": "53514C69746520666F726D6174203300" }
+      ]
+    },
+    {
       "id": "elf",
       "name": "Executable and Linkable Format",
       "category": "binary",
@@ -179,6 +235,28 @@
       "engine": "hex",
       "magic": [
         { "offset": 0, "bytes": "6465780A" }
+      ]
+    },
+    {
+      "id": "class",
+      "name": "Java Bytecode Class",
+      "category": "binary",
+      "mime": "application/java-vm",
+      "extensions": ["class"],
+      "engine": "hex",
+      "magic": [
+        { "offset": 0, "bytes": "CAFEBABE" }
+      ]
+    },
+    {
+      "id": "pe_exe",
+      "name": "Windows Executable",
+      "category": "binary",
+      "mime": "application/vnd.microsoft.portable-executable",
+      "extensions": ["exe", "dll", "sys"],
+      "engine": "hex",
+      "magic": [
+        { "offset": 0, "bytes": "4D5A" }
       ]
     }
   ]
