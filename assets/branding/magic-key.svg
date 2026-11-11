@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Magic Key: Minimalist Key with Starlight Spark -->
+  <circle cx="7.5" cy="15.5" r="5.5" />
+  <path d="m11.5 11.5 8.5-8.5" />
+  <path d="m17 6 3 3" />
+  <path d="m19 4 1 1" />
+  <path d="M19 13v4" stroke-dasharray="1 1" opacity="0.6"/>
+  <path d="M17 15h4" stroke-dasharray="1 1" opacity="0.6"/>
+</svg>

@@ -1,0 +1,185 @@
+{
+  "version": "1.0.0",
+  "signatures": [
+    {
+      "id": "pdf",
+      "name": "Portable Document Format",
+      "category": "document",
+      "mime": "application/pdf",
+      "extensions": ["pdf"],
+      "engine": "document",
+      "magic": [
+        { "offset": 0, "bytes": "255044462D" }
+      ]
+    },
+    {
+      "id": "png",
+      "name": "Portable Network Graphics",
+      "category": "image",
+      "mime": "image/png",
+      "extensions": ["png"],
+      "engine": "image",
+      "magic": [
+        { "offset": 0, "bytes": "89504E470D0A1A0A" }
+      ]
+    },
+    {
+      "id": "jpeg",
+      "name": "JPEG Image",
+      "category": "image",
+      "mime": "image/jpeg",
+      "extensions": ["jpg", "jpeg", "jpe"],
+      "engine": "image",
+      "magic": [
+        { "offset": 0, "bytes": "FFD8FF" }
+      ]
+    },
+    {
+      "id": "gif",
+      "name": "Graphics Interchange Format",
+      "category": "image",
+      "mime": "image/gif",
+      "extensions": ["gif"],
+      "engine": "image",
+      "magic": [
+        { "offset": 0, "bytes": "474946383761" },
+        { "offset": 0, "bytes": "474946383961" }
+      ]
+    },
+    {
+      "id": "webp",
+      "name": "WebP Image",
+      "category": "image",
+      "mime": "image/webp",
+      "extensions": ["webp"],
+      "engine": "image",
+      "magic": [
+        { "offset": 0, "bytes": "52494646", "secondary": { "offset": 8, "bytes": "57454250" } }
+      ]
+    },
+    {
+      "id": "bmp",
+      "name": "Bitmap Image",
+      "category": "image",
+      "mime": "image/bmp",
+      "extensions": ["bmp"],
+      "engine": "image",
+      "magic": [
+        { "offset": 0, "bytes": "424D" }
+      ]
+    },
+    {
+      "id": "zip",
+      "name": "ZIP Archive",
+      "category": "archive",
+      "mime": "application/zip",
+      "extensions": ["zip"],
+      "engine": "archive",
+      "magic": [
+        { "offset": 0, "bytes": "504B0304" },
+        { "offset": 0, "bytes": "504B0506" }
+      ]
+    },
+    {
+      "id": "gzip",
+      "name": "Gzip Compressed Archive",
+      "category": "archive",
+      "mime": "application/gzip",
+      "extensions": ["gz", "tgz"],
+      "engine": "archive",
+      "magic": [
+        { "offset": 0, "bytes": "1F8B" }
+      ]
+    },
+    {
+      "id": "tar",
+      "name": "Tarball Archive",
+      "category": "archive",
+      "mime": "application/x-tar",
+      "extensions": ["tar"],
+      "engine": "archive",
+      "magic": [
+        { "offset": 257, "bytes": "7573746172" }
+      ]
+    },
+    {
+      "id": "mp4",
+      "name": "MPEG-4 Video",
+      "category": "media",
+      "mime": "video/mp4",
+      "extensions": ["mp4", "m4v"],
+      "engine": "media",
+      "magic": [
+        { "offset": 4, "bytes": "66747970" }
+      ]
+    },
+    {
+      "id": "mp3",
+      "name": "MP3 Audio",
+      "category": "media",
+      "mime": "audio/mpeg",
+      "extensions": ["mp3"],
+      "engine": "media",
+      "magic": [
+        { "offset": 0, "bytes": "494433" },
+        { "offset": 0, "bytes": "FFFB" },
+        { "offset": 0, "bytes": "FFF3" }
+      ]
+    },
+    {
+      "id": "wav",
+      "name": "Waveform Audio File",
+      "category": "media",
+      "mime": "audio/wav",
+      "extensions": ["wav"],
+      "engine": "media",
+      "magic": [
+        { "offset": 0, "bytes": "52494646", "secondary": { "offset": 8, "bytes": "57415645" } }
+      ]
+    },
+    {
+      "id": "flac",
+      "name": "Free Lossless Audio Codec",
+      "category": "media",
+      "mime": "audio/flac",
+      "extensions": ["flac"],
+      "engine": "media",
+      "magic": [
+        { "offset": 0, "bytes": "664C6143" }
+      ]
+    },
+    {
+      "id": "ogg",
+      "name": "Ogg Media",
+      "category": "media",
+      "mime": "audio/ogg",
+      "extensions": ["ogg", "oga", "ogv"],
+      "engine": "media",
+      "magic": [
+        { "offset": 0, "bytes": "4F676753" }
+      ]
+    },
+    {
+      "id": "elf",
+      "name": "Executable and Linkable Format",
+      "category": "binary",
+      "mime": "application/x-executable",
+      "extensions": ["so", "bin", "elf"],
+      "engine": "hex",
+      "magic": [
+        { "offset": 0, "bytes": "7F454C46" }
+      ]
+    },
+    {
+      "id": "dex",
+      "name": "Dalvik Executable",
+      "category": "binary",
+      "mime": "application/vnd.android.dex",
+      "extensions": ["dex"],
+      "engine": "hex",
+      "magic": [
+        { "offset": 0, "bytes": "6465780A" }
+      ]
+    }
+  ]
+}
