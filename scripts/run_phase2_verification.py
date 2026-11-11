@@ -246,6 +246,8 @@ def check_flutter_source_and_build_config():
         ("app/android/build.gradle", "Root Android Gradle buildscript"),
         ("app/android/app/build.gradle", "App module Android Gradle buildscript"),
         ("app/android/gradle.properties", "Android Gradle JVM & AndroidX properties"),
+        ("app/android/app/src/main/res/values/styles.xml", "Android theme resource styles.xml"),
+        ("app/android/app/src/main/res/mipmap-mdpi/ic_launcher.png", "Android launcher icon ic_launcher.png"),
         ("app/android/gradlew", "Gradle wrapper shell script"),
         ("app/android/gradle/wrapper/gradle-wrapper.jar", "Gradle wrapper binary jar"),
         ("app/android/gradle/wrapper/gradle-wrapper.properties", "Gradle wrapper version configuration"),
