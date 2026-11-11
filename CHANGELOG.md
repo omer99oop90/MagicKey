@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.2] — 2026-11-11
+
+### Added
+- **Flutter Application Shell & UI Architecture (`app/`):**
+  - Production-ready Flutter structure configured with `pubspec.yaml`, assets declaration, and Material 3 design system.
+  - Bidirectional localization (`app/lib/l10n/app_localizations.dart`) supporting full Arabic (RTL) and English (LTR).
+  - Minimal modern theme system (`app/lib/theme/app_theme.dart`) with Light Mode (`#F8FAFC`) and Dark Mode (`#020617`).
+- **Home Screen (`app/lib/screens/home_screen.dart`):**
+  - Minimal branding with `magic-key.svg` vector asset.
+  - Prominent "Open File" primary action button triggering Android Storage Access Framework.
+  - Supported categories grid with Lucide SVG iconography (`assets/icons/*.svg`).
+  - In-memory recent files tracking with quick-reopen capability and session clearance.
+  - Interactive language toggle (العربية / English) and theme mode toggle (Light / Dark).
+- **Universal Viewer Screen (`app/lib/screens/viewer_screen.dart`):**
+  - Top navigation bar showing file title, detected format badge, formatted file size, and close button.
+  - Format Mismatch Notice banner (`DiagnosticBanner`) for corrupted or misnamed files.
+  - Toggle between rich graphical viewing and raw Hex Viewer inspection.
+- **Initial Viewer Implementations (`app/lib/viewers/`):**
+  - `TextCodeViewer`: Virtualized scrolling text viewer with line numbers, word-wrap toggle, and 1 MB memory ceiling.
+  - `HexViewer`: Virtualized 16-byte chunk viewer connected to the Rust core via `dart:ffi`, supporting paging (256 B / page) and jump-to-offset navigation.
+  - `ImageViewer`: Interactive 2D pan and pinch-to-zoom (0.5x to 10.0x) for raster images (PNG, JPEG, WebP, GIF, BMP, AVIF) and standalone SVGs via `flutter_svg`.
+  - `UnsupportedViewer`: Explanatory fallback state with one-tap transition to the Hex Viewer.
+- **Android System Integration (`app/android/`):**
+  - Configured `AndroidManifest.xml` with intent filters for `ACTION_MAIN` (launcher), `ACTION_VIEW` (`*/*`), `ACTION_SEND`, and `ACTION_SEND_MULTIPLE`.
+  - Implemented `MainActivity.kt` with `com.magickey/saf` MethodChannel providing `openDocument`, `readUriHeader`, `readUriChunk`, `getInitialIntentUri`, and `getMetadata`.
+  - Decoupled `FileSource` abstraction (`AndroidUriFileSource` and `LocalPathFileSource`) allowing transparent reading from ContentResolver streams without raw filesystem path assumptions.
+- **Dart:FFI Native Bridge (`app/lib/ffi/core_bindings.dart`):**
+  - Zero-copy native bridge binding `libmagickey_core.so` functions into typed Dart calls with safe memory deallocation.
+  - Added `magickey_format_hex_chunk` to Rust core and FFI exports, allowing in-memory byte buffer formatting for Android `content://` streams.
+- **Verification Harness (`scripts/run_phase2_verification.py`):**
+  - Automated 4-tier verification suite validating Rust core tests, C-ABI FFI boundary, Android Manifest/SAF Kotlin methods, and Flutter component/asset integrity.
+
 ## [0.1.0-alpha.1] — 2026-11-11
 
 ### Added

@@ -82,6 +82,30 @@ impl HexEngine {
         })
     }
 
+    /// Formats a raw in-memory byte buffer as a HexChunk at a given offset.
+    pub fn format_chunk_from_bytes(
+        buffer: &[u8],
+        offset: u64,
+        total_file_size: u64,
+    ) -> HexChunk {
+        let bytes_read = buffer.len();
+        let mut rows = Vec::with_capacity(bytes_read.div_ceil(16));
+        for (i, chunk) in buffer.chunks(16).enumerate() {
+            let row_offset = offset + (i * 16) as u64;
+            rows.push(format_row(row_offset, chunk));
+        }
+
+        let is_eof = (offset + bytes_read as u64) >= total_file_size;
+
+        HexChunk {
+            start_offset: offset,
+            bytes_read,
+            total_file_size,
+            rows,
+            is_eof,
+        }
+    }
+
     /// Reads a bounded chunk directly from a file path.
     pub fn read_chunk_from_path(
         path: &Path,

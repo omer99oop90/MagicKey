@@ -122,6 +122,35 @@ pub unsafe extern "C" fn magickey_read_hex_chunk(
         .unwrap_or(std::ptr::null_mut())
 }
 
+/// Formats a raw in-memory byte buffer as a Hex chunk. Returns a JSON string.
+/// Caller must free the returned pointer using `magickey_free_string`.
+///
+/// # Safety
+/// `buffer_ptr` must point to at least `len` valid bytes.
+#[no_mangle]
+pub unsafe extern "C" fn magickey_format_hex_chunk(
+    buffer_ptr: *const u8,
+    len: usize,
+    offset: u64,
+    total_size: u64,
+) -> *mut c_char {
+    if buffer_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let slice = std::slice::from_raw_parts(buffer_ptr, len);
+    let chunk = HexEngine::format_chunk_from_bytes(slice, offset, total_size);
+
+    let json = match serde_json::to_string(&chunk) {
+        Ok(j) => j,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    CString::new(json)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
 /// Returns the complete format registry database as a JSON string.
 /// Caller must free the returned pointer using `magickey_free_string`.
 ///
