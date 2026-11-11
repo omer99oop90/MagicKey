@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.4] — 2026-11-11
+
+### Added
+- **Committed Android Project as Source of Truth (`app/android/`):**
+  - Downloaded and committed official Gradle 8.4 wrapper (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`, `gradle-wrapper.properties`).
+  - Added complete Android AAPT resource directory (`app/android/app/src/main/res/`) providing:
+    - `values/styles.xml` & `values-night/styles.xml` defining `LaunchTheme` and `NormalTheme`.
+    - `values/colors.xml` and vector `drawable/ic_launcher_foreground.xml`.
+    - Vector adaptive icon `mipmap-anydpi-v26/ic_launcher.xml` and density-specific PNG launcher icons (`mipmap-mdpi/`, `hdpi/`, `xhdpi/`, `xxhdpi/`, `xxxhdpi/`).
+  - Completely removed `flutter create` and directory deletion from CI/CD workflow (`.github/workflows/build_apk.yml`), ensuring the committed repository is built with 100% fidelity.
+- **Rust Dart:FFI Live Runtime Verification:**
+  - Added `getRegistry()` method to `CoreBindings` exposing `magickey_get_registry_json`.
+  - Added `app/test/ffi_runtime_test.dart` to execute live dynamic library loading and Rust core functions (`detectBuffer`, `formatHexChunk`, `getRegistry`) during CI `flutter test`.
+  - Audited memory ownership, pointer lengths, and guaranteed single-release via `magickey_free_string`.
+- **Release ARM64 Android APK Production:**
+  - Successfully compiled `app-release.apk` directly from committed project in GitHub Actions ([Run #43069038389](https://github.com/omer99oop90/MagicKey/actions/runs/43069038389)).
+  - Verified SHA-256 checksum: `01bea0ec98df88de9a935d3098bb27dfe6e926589fb50ee4b86f47afa50a15a4`.
+  - Confirmed bundled `lib/arm64-v8a/libmagickey_core.so` (807,176 bytes) inside the APK.
+
 ## [0.1.0-alpha.3] — 2026-11-11
 
 ### Added
