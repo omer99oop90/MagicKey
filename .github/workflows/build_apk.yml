@@ -49,31 +49,45 @@ jobs:
           ls -la app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so
           file app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so
 
-      - name: Ensure Android Build Scaffolding & Gradle Wrapper
+      - name: Configure Modern Android Scaffolding & Custom Integrations
         working-directory: app
         run: |
-          if [ ! -f "android/gradlew" ]; then
-            echo "Generating Gradle wrapper via flutter create..."
-            mkdir -p /tmp/magickey_backup
-            cp -r android/app/src/main/AndroidManifest.xml /tmp/magickey_backup/
-            cp -r android/app/src/main/kotlin/com/magickey/app/MainActivity.kt /tmp/magickey_backup/
-            cp -r android/app/src/main/jniLibs /tmp/magickey_backup/
-            cp android/app/build.gradle /tmp/magickey_backup/
-            cp android/settings.gradle /tmp/magickey_backup/
-            cp android/build.gradle /tmp/magickey_backup/
-            
-            flutter create --platforms=android --org com.magickey .
-            
-            # Restore project-specific configurations
-            cp /tmp/magickey_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-            cp /tmp/magickey_backup/MainActivity.kt android/app/src/main/kotlin/com/magickey/app/MainActivity.kt
-            mkdir -p android/app/src/main/jniLibs/arm64-v8a
-            cp -r /tmp/magickey_backup/jniLibs/* android/app/src/main/jniLibs/
-            cp /tmp/magickey_backup/build.gradle android/app/build.gradle
-            cp /tmp/magickey_backup/settings.gradle android/settings.gradle
-            cp /tmp/magickey_backup/build.gradle android/build.gradle 2>/dev/null || true
-          fi
-          chmod +x android/gradlew || true
+          echo "Backing up custom Android integration files..."
+          mkdir -p /tmp/magickey_custom
+          cp -r android/app/src/main/AndroidManifest.xml /tmp/magickey_custom/
+          cp -r android/app/src/main/kotlin/com/magickey/app/MainActivity.kt /tmp/magickey_custom/
+          cp -r android/app/src/main/jniLibs /tmp/magickey_custom/
+
+          echo "Generating clean modern Android platform directory via Flutter..."
+          rm -rf android
+          flutter create --platforms=android --org com.magickey .
+
+          echo "Restoring custom Manifest, Kotlin MainActivity, and native jniLibs..."
+          cp /tmp/magickey_custom/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/kotlin/com/magickey/app
+          cp /tmp/magickey_custom/MainActivity.kt android/app/src/main/kotlin/com/magickey/app/MainActivity.kt
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp -r /tmp/magickey_custom/jniLibs/* android/app/src/main/jniLibs/
+
+          echo "Configuring jniLibs sourceSet and ARM64 ABI filter in android/app/build.gradle..."
+          python3 -c "
+          with open('android/app/build.gradle', 'r') as f:
+              content = f.read()
+
+          if 'main.jniLibs.srcDirs' not in content:
+              content = content.replace('defaultConfig {', '''defaultConfig {
+                  ndk {
+                      abiFilters 'arm64-v8a'
+                  }''')
+              content = content.replace('android {', '''android {
+              sourceSets {
+                  main.jniLibs.srcDirs = ['src/main/jniLibs']
+              }''')
+
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(content)
+          "
+          chmod +x android/gradlew
 
       - name: Build Release ARM64 Android APK
         working-directory: app
