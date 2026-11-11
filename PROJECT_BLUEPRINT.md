@@ -34,10 +34,14 @@ An empirical audit of the host environment was performed directly on the target 
 
 ### 2.1 Host Environment Characteristics
 * **Host Platform:** Android 13 (API level 33), Linux Kernel 4.19.113 (`aarch64-linux-android`).
-* **RAM Profile:** Total 10,601 MB (~10 GB), Available ~2,911 MB, Swap 4,095 MB (~4 GB).
+* **RAM Profile:**
+  * Physical MemTotal: `10,601.6 MiB` (~10.35 GiB usable from 12 GB physical hardware; ~1.65 GB reserved for kernel/modem/GPU).
+  * MemAvailable: ~`2,640 - 2,910 MiB` (~2.6 GiB).
+  * Swap (zRAM): `4,096.0 MiB` (4.00 GiB total, ~1,346 MiB free).
 * **Storage Profile:**
-  * Root Mount (`/dev/block/sda37` mapped to `/data` and `/storage/emulated`): 465 GB Total, 461 GB Used, **3.8 GB Available (100% full)**.
-  * **Critical Constraint:** Extreme storage pressure. Dependencies must be lightweight; heavy multi-gigabyte SDKs (e.g. monolithic Android Studio distributions or unneeded toolchains) cannot be installed locally without risking device exhaustion.
+  * Root Mount (`/dev/block/sda37` mapped to `/data` and `/storage/emulated`): 465.10 GiB Total, ~454 - 461 GiB Used, **3.86 - 11.12 GiB Available (97.6% - 100% capacity)**.
+  * **Dynamic Fluctuation:** Available space fluctuates dynamically as Android background services trim system caches when capacity approaches 98%.
+  * **Critical Constraint:** Extreme storage pressure. Dependencies must be lightweight; heavy multi-gigabyte SDKs (e.g. monolithic Android Studio distributions, local Flutter engine artifacts, or unneeded toolchains) cannot be downloaded locally without risking device exhaustion.
 * **Shared Storage Quirks (`/storage/emulated/0` FUSE):**
   * Android's FUSE emulation forbids symbolic link creation (`ln -s` returns `Permission denied`).
   * Direct execution permissions (`chmod +x`) are synthetic and masked (`noexec` attribute). Build scripts and test runners must be executed via direct interpreter calls (e.g., `python3 script.py`, `bash script.sh`).
@@ -54,7 +58,7 @@ An empirical audit of the host environment was performed directly on the target 
 | **Python** | `3.14.10` | `3.14.4` | Environment scripting, format testing, code generation. |
 | **Android Packaging** | `aapt`, `apksigner`, `zipalign` | Shared from Termux | APK resource packaging and alignment functional. |
 | **DEX Compiler** | `d8` / `dx` (in Termux repo) | `d8` via apt | Dex bytecode compilation available without full studio. |
-| **Flutter / Dart** | Dart in Termux repo; Flutter via workstation/CI | Available for headless Dart | Flutter app shell designed for cross-platform portability. |
+| **Flutter / Dart** | Not installed locally | Not installed locally | Dart is available via Termux package manager (`dart 3.13.7`), but not installed. Full Flutter SDK is not installed and **cannot build APKs directly on an Android host**. Flutter APK compilation requires an external workstation (x86_64/macOS) or GitHub Actions CI/CD runner. |
 
 ---
 
@@ -81,7 +85,7 @@ To ensure maximum performance and cross-platform longevity without bloating memo
 | Category | Evaluated Candidates | Selected Solution | Justification |
 |---|---|---|---|
 | **Documents (PDF)** | PDFium vs Native `android.graphics.pdf.PdfRenderer` vs `pdfrx` | **Native `PdfRenderer` on Android; PDFium/pdf.js for Desktop/Web** | Android's built-in `PdfRenderer` has **0 MB added APK size** and hardware-accelerated page rendering. No ~25MB native PDFium binary needed for mobile. |
-| **Images** | Bundled C decoders vs Native Platform Decoders | **Hardware-Accelerated Platform Codecs** | Android OS natively supports JPEG, PNG, GIF, WebP, BMP, HEIF, AVIF. Leverages OS hardware pipelines with zero binary bloat. |
+| **Images** | Bundled C decoders vs Native Platform Decoders | **Hardware-Accelerated Platform Codecs + Dedicated SVG Parser** | Android OS natively supports raster decoding for JPEG, PNG, GIF, WebP, BMP, HEIF, and AVIF via hardware pipelines with zero binary bloat. Standalone vector SVGs are rendered via a dedicated, safe XML vector parser (`flutter_svg`) with script execution disabled. |
 | **Audio & Video** | FFmpeg vs Native MediaCodec / ExoPlayer / Media3 | **Native Media3 / ExoPlayer (Android) & AVPlayer (iOS)** | FFmpeg adds ~40 MB binary size and high battery consumption. Built-in OS media codecs cover standard formats (MP4, MKV, WebM, MP3, AAC, FLAC, WAV, OGG) with hardware decoding. |
 | **Archives** | `libarchive` (C) vs Pure Dart `archive` / Rust `zip-rs` | **Pure Safe Streaming Reader (`archive` / Rust core)** | Zero external C shared libraries. Enforces strict zip-bomb limits (100:1 ratio cap) and path-traversal sanitization. |
 | **Text & Code** | Tree-sitter vs Virtualized Stream Tokenizer (`flutter_highlight`) | **Virtualized Stream Reader + Lightweight Tokenizer** | Tree-sitter grammars consume 50MB+ compiled space. A virtualized syntax tokenizer handles 180+ languages with <1MB footprint and immediate startup. |
@@ -129,11 +133,17 @@ To ensure maximum performance and cross-platform longevity without bloating memo
 
 Every file opened by Magic Key is treated as untrusted and potentially hostile:
 
-1. **No Code Execution:** Executable files (`.dex`, `.apk`, `.elf`, `.exe`, `.so`, `.sh`) are recognized, categorized as Executable Binaries, and redirected to the **Hex Viewer** or metadata inspector. They are NEVER executed.
+1. **No Code Execution:** Executable files (`.dex`, `.apk`, `.elf`, `.exe`, `.so`, `.sh`) are recognized, categorized as Executable Binaries, and redirected strictly to the **Hex Viewer** or metadata inspector. They are NEVER executed.
 2. **Script & Macro Isolation:** Embedded JavaScript in PDFs or SVGs and macros in Office files are stripped or completely ignored by the viewing engines.
-3. **Zip-Bomb & Decompression Traps:** Archive engines enforce a maximum decompression ratio of 100:1 and a single-file extraction limit (e.g., 50 MB in preview mode).
-4. **Path Traversal Immunity:** Archive directory walks automatically strip prefix slashes (`/`), parent references (`../`), and drive indicators (`C:`).
-5. **Memory Cap:** Viewing buffers enforce a hard cap per viewport chunk to avoid Out-Of-Memory (OOM) denial-of-service on rogue binary inputs.
+3. **Zip-Bomb & Decompression Traps:**
+   * Maximum expansion ratio: **100:1 cap** (any entry that claims to uncompress to more than 100x its compressed size is flagged and blocked).
+   * Maximum single-file extraction limit: **50 MB** in preview mode.
+   * Maximum archive entry count: **10,000 files** to prevent directory tree memory exhaustion.
+4. **Path Traversal Immunity:** Archive directory walks automatically strip prefix slashes (`/`, `\`), parent references (`../`, `..\`), and volume drive indicators (`C:`).
+5. **Memory Cap & Streaming Limits:**
+   * Viewing buffers enforce a hard chunked streaming cap (4 KB to 64 KB per viewport page) to prevent Out-Of-Memory (OOM) denial-of-service.
+   * Large text/source code files exceeding **20 MB** switch automatically to chunked paged text mode or Hex mode to prevent syntax-highlighting regex engine runaway (ReDoS).
+6. **Defensive Error Boundaries:** Every engine decoder is isolated behind a fault boundary. Any malformed codec exception or decoding failure immediately routes to the Universal Hex Viewer with an explanatory diagnostic banner.
 
 ---
 

@@ -19,14 +19,32 @@ def print_header(title):
     print("=" * 60)
 
 def check_system():
-    print_header("1. Host System & Kernel")
+    print_header("1. Host System, Kernel & Memory")
     print(f"System   : {platform.system()} {platform.release()}")
     print(f"Machine  : {platform.machine()}")
     print(f"Platform : {platform.platform()}")
     
-    # Check Android-specific properties
     sdk_prop = os.environ.get("ANDROID__BUILD_VERSION_SDK", "Unknown")
     print(f"Android SDK Level: {sdk_prop}")
+
+    # Inspect /proc/meminfo
+    try:
+        meminfo = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
+        total_ram = meminfo.get("MemTotal", 0) / 1024
+        avail_ram = meminfo.get("MemAvailable", 0) / 1024
+        swap_total = meminfo.get("SwapTotal", 0) / 1024
+        swap_free = meminfo.get("SwapFree", 0) / 1024
+        print(f"Physical RAM   : {total_ram:.1f} MiB ({total_ram/1024:.2f} GiB usable from hardware)")
+        print(f"Available RAM  : {avail_ram:.1f} MiB ({avail_ram/1024:.2f} GiB)")
+        print(f"zRAM Swap Total: {swap_total:.1f} MiB ({swap_total/1024:.2f} GiB)")
+        print(f"zRAM Swap Free : {swap_free:.1f} MiB ({swap_free/1024:.2f} GiB)")
+    except Exception as e:
+        print(f"  [WARN] Unable to parse /proc/meminfo: {e}")
 
 def check_storage():
     print_header("2. Storage & Filesystem Diagnostics")
@@ -83,6 +101,9 @@ def check_toolchains():
         ("make", ["make", "--version"]),
         ("java", ["java", "-version"]),
         ("javac", ["javac", "-version"]),
+        ("d8", ["d8", "--version"]),
+        ("dart", ["dart", "--version"]),
+        ("flutter", ["flutter", "--version"]),
         ("python3", ["python3", "--version"]),
         ("aapt", ["aapt", "version"]),
         ("apksigner", ["apksigner", "--version"]),
