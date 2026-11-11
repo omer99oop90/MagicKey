@@ -1,0 +1,22 @@
+# Rust build artifacts
+target/
+core/target/
+
+# Flutter build artifacts
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/.packages
+
+# Android build artifacts
+app/android/.gradle/
+app/android/local.properties
+app/android/app/build/
+
+# OS / Editor files
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

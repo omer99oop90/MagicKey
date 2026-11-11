@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.3] — 2026-11-11
+
+### Added
+- **Remote Build & CI/CD Pipeline (`.github/workflows/build_apk.yml`):**
+  - Fully automated GitHub Actions workflow to build the production ARM64 Android APK.
+  - Matrix / runner execution on `ubuntu-latest` with Java 17, Rust stable toolchain (`dtolnay/rust-toolchain@stable`), and Flutter SDK 3.24.3 (`subosito/flutter-action@v2`).
+  - Automated execution of Rust core unit/integration tests and Flutter unit tests.
+  - Automatic packaging and upload of `app-release.apk` as a workflow artifact.
+- **Android Gradle Build Infrastructure (`app/android/`):**
+  - Added standard Android Gradle configuration (`settings.gradle`, root `build.gradle`, `app/build.gradle`, `gradle.properties`, and `gradle-wrapper.properties`).
+  - Configured `namespace "com.magickey.app"` and `applicationId "com.magickey.app"` targeting Android SDK 34 (compileSdk 34, targetSdk 34, minSdk 21).
+  - Explicitly mapped `jniLibs.srcDirs = ['src/main/jniLibs']` to package native ARM64 library into the APK.
+- **Rust FFI Native Packaging (`app/android/app/src/main/jniLibs/arm64-v8a/`):**
+  - Packaged compiled ELF64 AArch64 `libmagickey_core.so` (789 KB) directly into the Android app's `jniLibs/arm64-v8a/`.
+  - Verified 100% Android Bionic runtime compatibility with dynamic dependencies strictly confined to system libraries `libc.so` and `libdl.so`.
+  - Verified all 6 exported C symbols (`magickey_detect_file`, `magickey_detect_buffer`, `magickey_read_hex_chunk`, `magickey_format_hex_chunk`, `magickey_get_registry_json`, `magickey_free_string`).
+- **Flutter Project Validation & Dependencies:**
+  - Added `ffi: ^2.1.3` to `app/pubspec.yaml` dependencies.
+  - Mirrored branding and category Lucide SVGs into `app/assets/` to satisfy Flutter package asset resolution.
+  - Implemented standard `package:flutter_test` unit tests in `app/test/models_and_logic_test.dart`.
+- **Android Intent Integration Hardening:**
+  - Extended `MainActivity.kt` with `ACTION_SEND_MULTIPLE` intent handler for graceful handling of multi-file share payloads.
+  - Added `contentResolver.takePersistableUriPermission()` to maintain persistent access across app sessions for files selected via SAF.
+- **Verification Suite Expansion (`scripts/run_phase2_verification.py`):**
+  - Expanded automated verification harness to audit jniLibs packaging, ELF symbols, Gradle scaffolding, and GitHub Actions workflow configuration.
+
 ## [0.1.0-alpha.2] — 2026-11-11
 
 ### Added

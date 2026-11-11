@@ -37,8 +37,15 @@ class MainActivity : FlutterActivity() {
                 initialIntentUri = uri.toString()
             }
         } else if (Intent.ACTION_SEND == action) {
+            @Suppress("DEPRECATION")
             val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
             uri?.let {
+                initialIntentUri = it.toString()
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE == action) {
+            @Suppress("DEPRECATION")
+            val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+            uris?.firstOrNull()?.let {
                 initialIntentUri = it.toString()
             }
         }
@@ -140,6 +147,12 @@ class MainActivity : FlutterActivity() {
             pendingResult = null
             if (resultCode == Activity.RESULT_OK && data?.data != null) {
                 val uri = data.data!!
+                try {
+                    val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                } catch (_: SecurityException) {
+                    // Not all document providers support persistable permissions
+                }
                 val metadata = resolveMetadata(uri)
                 res?.success(metadata)
             } else {

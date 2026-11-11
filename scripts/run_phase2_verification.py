@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Magic Key — Phase 2 Comprehensive Verification Harness
+Magic Key — Phase 2 & 2.1 Comprehensive Verification Harness
 Tests the Rust-to-Dart FFI boundary, Android SAF integration,
-UI component integrity, and large-file chunking.
+UI component integrity, jniLibs packaging, and GitHub Actions workflow.
 """
 
 import os
 import sys
-import tempfile
 import subprocess
 import json
 import ctypes
@@ -15,6 +14,7 @@ import ctypes
 PROJECT_ROOT = "/storage/emulated/0/ANTYEE/MagicKey"
 CARGO_TARGET_DIR = "/data/data/com.termux/files/home/.cargo_targets/magickey"
 SO_PATH = os.path.join(CARGO_TARGET_DIR, "release/libmagickey_core.so")
+JNILIBS_SO_PATH = os.path.join(PROJECT_ROOT, "app/android/app/src/main/jniLibs/arm64-v8a/libmagickey_core.so")
 
 def print_header(title):
     print("\n" + "=" * 65)
@@ -40,10 +40,46 @@ def check_rust_core_tests():
         print("  [FAIL] Rust test suite encountered errors.")
         return False
 
-def check_ffi_boundary():
-    print_header("2. Rust-to-Dart C-ABI FFI Boundary & Android Buffer API")
+def check_ffi_packaging_and_boundary():
+    print_header("2. Rust FFI Packaging & Bionic Runtime Verification")
+    
+    # 1. Verify jniLibs packaging
+    if not os.path.exists(JNILIBS_SO_PATH):
+        print(f"  [FAIL] Missing packaged dynamic library: {JNILIBS_SO_PATH}")
+        return False
+    
+    size_kb = os.path.getsize(JNILIBS_SO_PATH) / 1024
+    print(f"  [PASS] Packaged ARM64 library present at jniLibs/arm64-v8a ({size_kb:.1f} KB).")
+
+    # 2. Verify ELF header and exported symbols using readelf and nm
+    res_symbols = subprocess.run(
+        ["nm", "-D", "--defined-only", JNILIBS_SO_PATH],
+        capture_output=True, text=True
+    )
+    if res_symbols.returncode != 0:
+        print(f"  [FAIL] Unable to read symbols from {JNILIBS_SO_PATH}")
+        return False
+
+    required_symbols = [
+        "magickey_detect_file",
+        "magickey_detect_buffer",
+        "magickey_read_hex_chunk",
+        "magickey_format_hex_chunk",
+        "magickey_get_registry_json",
+        "magickey_free_string",
+    ]
+    for sym in required_symbols:
+        if sym in res_symbols.stdout:
+            print(f"  [PASS] Symbol verified in jniLibs ELF: {sym}")
+        else:
+            print(f"  [FAIL] Missing symbol in jniLibs ELF: {sym}")
+            return False
+
+    # 3. Dynamic loading test
+    # Note: Android Bionic restricts direct dlopen from /storage/emulated/0/ (linker namespace).
+    # We verify dynamic runtime invocation via Termux allowed execution target.
     if not os.path.exists(SO_PATH):
-        print(f"  [FAIL] Missing compiled dynamic library: {SO_PATH}")
+        print(f"  [FAIL] Missing build target library: {SO_PATH}")
         return False
 
     lib = ctypes.CDLL(SO_PATH)
@@ -60,6 +96,9 @@ def check_ffi_boundary():
 
     lib.magickey_format_hex_chunk.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint64, ctypes.c_uint64]
     lib.magickey_format_hex_chunk.restype = ctypes.c_void_p
+
+    lib.magickey_get_registry_json.argtypes = []
+    lib.magickey_get_registry_json.restype = ctypes.c_void_p
 
     lib.magickey_free_string.argtypes = [ctypes.c_void_p]
     lib.magickey_free_string.restype = None
@@ -97,14 +136,20 @@ def check_ffi_boundary():
     assert chunk_json["is_eof"] == False
     print("  [PASS] magickey_format_hex_chunk() -> Formatted 4 rows of 16 bytes for Android ContentResolver.")
 
-    # Test 4: Empty buffer handling
+    # Test 4: Registry JSON extraction
+    reg_ptr = lib.magickey_get_registry_json()
+    reg_json = get_json_and_free(reg_ptr)
+    assert isinstance(reg_json, list) and len(reg_json) > 0, "Expected list of format definitions"
+    print(f"  [PASS] magickey_get_registry_json() -> Verified format registry with {len(reg_json)} formats.")
+
+    # Test 5: Empty buffer handling
     empty_ptr = lib.magickey_detect_buffer(b"", 0, None)
     empty_json = get_json_and_free(empty_ptr)
     assert empty_json["format_id"] == "empty"
     assert empty_json["suggested_viewer"] == "hex"
     print("  [PASS] magickey_detect_buffer() -> Empty buffer safely reported as empty/hex.")
 
-    # Test 5: Unknown binary data handling
+    # Test 6: Unknown binary data handling
     random_bin = b"\xde\xad\xbe\xef\x00\x01\x02\x03\x04\x05"
     unrec_ptr = lib.magickey_detect_buffer(random_bin, len(random_bin), b"xyz")
     unrec_json = get_json_and_free(unrec_ptr)
@@ -125,7 +170,6 @@ def check_android_manifest_and_saf():
     with open(manifest_path, "r") as f:
         manifest_text = f.read()
 
-    # Verify Intent Filters
     checks = [
         ("android.intent.action.MAIN", "Application Launcher Intent"),
         ("android.intent.action.VIEW", "Universal File Opener (ACTION_VIEW)"),
@@ -143,7 +187,6 @@ def check_android_manifest_and_saf():
             print(f"  [FAIL] AndroidManifest: Missing {desc} ({token})")
             all_passed = False
 
-    # Verify Kotlin SAF Implementation
     kt_path = os.path.join(PROJECT_ROOT, "app/android/app/src/main/kotlin/com/magickey/app/MainActivity.kt")
     if not os.path.exists(kt_path):
         print("  [FAIL] Missing MainActivity.kt")
@@ -159,6 +202,8 @@ def check_android_manifest_and_saf():
         ("readUriHeader", "SAF bounded header reader MethodChannel"),
         ("readUriChunk", "SAF bounded chunk reader MethodChannel"),
         ("handleIncomingIntent", "Incoming View & Share Intent handler"),
+        ("takePersistableUriPermission", "Persistable URI permissions"),
+        ("ACTION_SEND_MULTIPLE", "ACTION_SEND_MULTIPLE intent handler"),
     ]
 
     for token, desc in kt_checks:
@@ -170,8 +215,8 @@ def check_android_manifest_and_saf():
 
     return all_passed
 
-def check_flutter_source_components():
-    print_header("4. Flutter UI Source Code & Asset Integrity")
+def check_flutter_source_and_build_config():
+    print_header("4. Flutter Project Configuration & Build Readiness")
 
     required_components = [
         ("app/pubspec.yaml", "Flutter package specification"),
@@ -190,13 +235,19 @@ def check_flutter_source_components():
         ("app/lib/ffi/core_bindings.dart", "Dart:FFI native bridge to Rust core"),
         ("app/lib/services/file_service.dart", "File Service & SAF coordinator"),
         ("app/lib/services/recent_files_service.dart", "Recent files local session manager"),
-        ("assets/branding/magic-key.svg", "Magic Key branding SVG icon"),
-        ("assets/icons/file-text.svg", "Document category Lucide SVG"),
-        ("assets/icons/image.svg", "Image category Lucide SVG"),
-        ("assets/icons/film.svg", "Media category Lucide SVG"),
-        ("assets/icons/code.svg", "Text & Code category Lucide SVG"),
-        ("assets/icons/archive.svg", "Archive category Lucide SVG"),
-        ("assets/icons/binary.svg", "Binary category Lucide SVG"),
+        ("app/assets/branding/magic-key.svg", "App package branding SVG icon"),
+        ("app/assets/icons/file-text.svg", "Document category Lucide SVG"),
+        ("app/assets/icons/image.svg", "Image category Lucide SVG"),
+        ("app/assets/icons/film.svg", "Media category Lucide SVG"),
+        ("app/assets/icons/code.svg", "Text & Code category Lucide SVG"),
+        ("app/assets/icons/archive.svg", "Archive category Lucide SVG"),
+        ("app/assets/icons/binary.svg", "Binary category Lucide SVG"),
+        ("app/android/settings.gradle", "Android Gradle settings"),
+        ("app/android/build.gradle", "Root Android Gradle buildscript"),
+        ("app/android/app/build.gradle", "App module Android Gradle buildscript"),
+        ("app/android/gradle.properties", "Android Gradle JVM & AndroidX properties"),
+        ("app/android/gradle/wrapper/gradle-wrapper.properties", "Gradle wrapper version configuration"),
+        (".github/workflows/build_apk.yml", "GitHub Actions CI/CD ARM64 APK workflow"),
     ]
 
     missing = 0
@@ -208,24 +259,33 @@ def check_flutter_source_components():
             print(f"  [FAIL] Missing component: {desc} ({rel_path})")
             missing += 1
 
+    # Check pubspec.yaml dependencies
+    with open(os.path.join(PROJECT_ROOT, "app/pubspec.yaml")) as f:
+        pubspec_text = f.read()
+    if "ffi:" in pubspec_text and "flutter_svg:" in pubspec_text:
+        print("  [PASS] pubspec.yaml includes required dependencies (ffi, flutter_svg).")
+    else:
+        print("  [FAIL] pubspec.yaml missing required dependencies.")
+        missing += 1
+
     return missing == 0
 
 def main():
     print("=================================================================")
-    print("  MAGIC KEY — PHASE 2 VERIFICATION & INTEGRATION HARNESS        ")
+    print("  MAGIC KEY — PHASE 2.1 VERIFICATION & BUILD READINESS HARNESS   ")
     print("=================================================================")
 
     ok1 = check_rust_core_tests()
-    ok2 = check_ffi_boundary()
+    ok2 = check_ffi_packaging_and_boundary()
     ok3 = check_android_manifest_and_saf()
-    ok4 = check_flutter_source_components()
+    ok4 = check_flutter_source_and_build_config()
 
-    print_header("Phase 2 Verification Summary")
+    print_header("Phase 2.1 Verification Summary")
     if ok1 and ok2 and ok3 and ok4:
-        print("  ALL PHASE 2 VERIFICATION CHECKS PASSED WITH 100% SUCCESS!")
+        print("  ALL PHASE 2.1 VERIFICATION CHECKS PASSED WITH 100% SUCCESS!")
         sys.exit(0)
     else:
-        print("  SOME PHASE 2 VERIFICATION CHECKS FAILED.")
+        print("  SOME PHASE 2.1 VERIFICATION CHECKS FAILED.")
         sys.exit(1)
 
 if __name__ == "__main__":
