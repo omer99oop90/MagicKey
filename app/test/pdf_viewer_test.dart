@@ -204,6 +204,8 @@ void main() {
         ),
       );
 
+      await tester.pumpAndSettle();
+
       expect(find.byType(PdfViewer), findsOneWidget);
       expect(find.byType(UnsupportedViewer), findsNothing);
     });
@@ -229,6 +231,8 @@ void main() {
           ),
         ),
       );
+
+      await tester.pumpAndSettle();
 
       expect(find.byType(UnsupportedViewer), findsOneWidget);
       expect(find.byType(PdfViewer), findsNothing);
@@ -282,9 +286,9 @@ void main() {
 
       expect(find.text('Corrupted PDF'), findsOneWidget);
       expect(find.byIcon(Icons.broken_image_outlined), findsOneWidget);
-      expect(find.text('Open in Hex Viewer'), findsOneWidget);
+      expect(find.text('Inspect Raw Bytes in Hex'), findsOneWidget);
 
-      await tester.tap(find.text('Open in Hex Viewer'));
+      await tester.tap(find.text('Inspect Raw Bytes in Hex'));
       expect(hexClicked, isTrue);
     });
 
