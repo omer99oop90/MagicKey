@@ -227,4 +227,116 @@ void main() {
       await sub.cancel();
     });
   });
+
+  group('SAF File Picker & Cancellation Path Tests', () {
+    final fileService = FileService.instance;
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    test('Cancellation: openDocument returning null yields null without throwing', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          if (call.method == 'openDocument') {
+            return null; // System picker canceled
+          }
+          return null;
+        },
+      );
+
+      final result = await fileService.pickFile();
+      expect(result, isNull);
+    });
+
+    test('Cancellation: openDocument returning missing or null URI yields null safely', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          if (call.method == 'openDocument') {
+            return {'name': 'partial.txt', 'size': 50}; // missing 'uri'
+          }
+          return null;
+        },
+      );
+
+      final result = await fileService.pickFile();
+      expect(result, isNull);
+    });
+
+    test('Error containment: PlatformException from SAF bridge returns null without unhandled error', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          if (call.method == 'openDocument') {
+            throw PlatformException(code: 'CANCELED', message: 'Activity canceled');
+          }
+          return null;
+        },
+      );
+
+      final result = await fileService.pickFile();
+      expect(result, isNull);
+    });
+
+    test('Successful selection: openDocument returning valid map yields AndroidUriFileSource', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          if (call.method == 'openDocument') {
+            return {
+              'uri': 'content://com.android.providers.media/documents/document/image%3A1024',
+              'name': 'vacation.jpg',
+              'size': 204800,
+            };
+          }
+          return null;
+        },
+      );
+
+      final result = await fileService.pickFile(mimeType: 'image/*');
+      expect(result, isNotNull);
+      expect(result, isA<AndroidUriFileSource>());
+      expect(result!.name, 'vacation.jpg');
+      expect(result.size, 204800);
+      expect(result.uri, 'content://com.android.providers.media/documents/document/image%3A1024');
+    });
+
+    test('Sequential repeated launches: multiple cancellations and selections succeed without session lock', () async {
+      int launchCount = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          if (call.method == 'openDocument') {
+            launchCount++;
+            if (launchCount == 1) return null; // Cancel
+            if (launchCount == 2) {
+              return {'uri': 'content://test/file2', 'name': 'file2.txt', 'size': 100};
+            }
+            return null; // Cancel again
+          }
+          return null;
+        },
+      );
+
+      // Launch 1: Canceled
+      final res1 = await fileService.pickFile();
+      expect(res1, isNull);
+
+      // Launch 2: Selected
+      final res2 = await fileService.pickFile();
+      expect(res2, isNotNull);
+      expect(res2!.name, 'file2.txt');
+
+      // Launch 3: Canceled
+      final res3 = await fileService.pickFile();
+      expect(res3, isNull);
+
+      expect(launchCount, 3);
+    });
+  });
 }

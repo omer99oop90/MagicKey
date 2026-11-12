@@ -93,9 +93,23 @@ void main() {
 
       final textCat = CategoryGrid.categories.firstWhere((c) => c.id == 'text_code');
       expect(textCat.mimeType, 'text/*');
+      expect(textCat.formatsHint, contains('Source Code'));
+
+      final mediaCat = CategoryGrid.categories.firstWhere((c) => c.id == 'media');
+      expect(mediaCat.mimeType, 'audio/*, video/*');
+      expect(mediaCat.formatsHint, contains('Audio & Video'));
+
+      final documentCat = CategoryGrid.categories.firstWhere((c) => c.id == 'document');
+      expect(documentCat.mimeType, '*/*');
+      expect(documentCat.formatsHint, contains('Plain Text'));
 
       final archiveCat = CategoryGrid.categories.firstWhere((c) => c.id == 'archive');
+      expect(archiveCat.mimeType, '*/*');
       expect(archiveCat.formatsHint, contains('ZIP, APK'));
+
+      final binaryCat = CategoryGrid.categories.firstWhere((c) => c.id == 'binary');
+      expect(binaryCat.mimeType, '*/*');
+      expect(binaryCat.formatsHint, contains('Hex Engine'));
     });
 
     test('UTF-8 Boundary Correction: Arabic 2-byte, 3-byte, and 4-byte characters complete decoding', () {
