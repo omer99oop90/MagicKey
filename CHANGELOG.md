@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.5] — 2026-11-12
+
+### Fixed & Enhanced (Phase 2.3: Core File Opening Validation)
+- **UTF-8 Multi-byte Decoding & International Text Support (`app/lib/models/file_source.dart`):**
+  - Replaced flawed `String.fromCharCodes` byte-to-UTF-16 conversion with `utf8.decode(chunk, allowMalformed: true)` in both `LocalPathFileSource` and `AndroidUriFileSource`.
+  - Accurately renders Arabic, Unicode, and international multi-byte text files in the virtualized text viewer without mojibake or crashes.
+  - Hardened file source reading methods (`readHeader`, `readChunk`) with defensive try/catch blocks.
+- **Interactive Category Filtering via Android SAF (`app/lib/widgets/category_grid.dart` & `MainActivity.kt`):**
+  - Transformed static category container cards into interactive touch targets using `Material` + `InkWell` ripple animations.
+  - Connected category card taps directly to `FileService.pickFile(mimeType: item.mimeType)`.
+  - Updated Android `MainActivity.kt` to extract the `mimeType` argument and configure `Intent.type` and `Intent.EXTRA_MIME_TYPES`, enabling targeted file pickers for images (`image/*`) and text/code (`text/*`).
+  - Added full dynamic bidirectional localization (Arabic RTL & English LTR) to category cards.
+- **Honest Phase 2 Category Badges:**
+  - Updated category format hints across all 6 cards to accurately reflect active Phase 2 viewer capabilities versus Phase 3 roadmap engines:
+    - *Document:* `Plain Text (PDF: Raw Hex)`
+    - *Image:* `PNG, JPEG, WebP, SVG, GIF` (Active Viewer)
+    - *Audio & Video:* `Audio & Video (Raw Hex / Phase 3)`
+    - *Text & Code:* `Source Code, JSON, XML, MD` (Active Viewer)
+    - *Archive:* `ZIP, APK, TAR (Raw Hex / Phase 3)`
+    - *Binary & Other:* `Hex Engine, Byte Inspection` (Active Viewer)
+- **APK Package Recognition in Rust Format Registry (`core/` & `signatures.json`):**
+  - Added `"apk"` and `"jar"` to the known extensions list for the `zip` format in `file_detection/signatures.json` and `core/src/format_registry/registry.rs`.
+  - Android application packages (`.apk`) are now recognized as valid ZIP packages without triggering false "Format Mismatch" warnings.
+  - Added integration test `test_magic_bytes_detection_standard_formats` verification for `.apk` hints in `core/tests/detection_tests.rs`.
+- **Defensive Error Containment:**
+  - Wrapped `FileService.identifyFile()` in defensive try/catch returning safe fallback `DetectionResult` on stream read errors.
+  - Wrapped `HomeScreen._openFile()` in defensive try/catch with snackbar feedback.
+
 ## [0.1.0-alpha.4] — 2026-11-11
 
 ### Added
