@@ -182,7 +182,26 @@ void main() {
   });
 
   group('ViewerScreen Routing Tests for Document Formats', () {
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pdfChannel, null);
+    });
+
     testWidgets('Routes PDF format to PdfViewer', (WidgetTester tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pdfChannel, (MethodCall call) async {
+        if (call.method == 'openPdf') {
+          return {
+            'sessionId': 'session_routing',
+            'pageCount': 1,
+            'pages': [
+              {'pageIndex': 0, 'width': 612, 'height': 792},
+            ],
+          };
+        }
+        return null;
+      });
+
       final source = LocalPathFileSource(path: '/storage/sample.pdf', name: 'sample.pdf', size: 1024);
       const detection = DetectionResult(
         formatId: 'pdf',
@@ -204,7 +223,7 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.byType(PdfViewer), findsOneWidget);
       expect(find.byType(UnsupportedViewer), findsNothing);
