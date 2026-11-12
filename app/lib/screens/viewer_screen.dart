@@ -3,6 +3,7 @@ import '../models/detection_result.dart';
 import '../models/file_source.dart';
 import '../viewers/hex_viewer.dart';
 import '../viewers/image_viewer.dart';
+import '../viewers/pdf_viewer.dart';
 import '../viewers/text_code_viewer.dart';
 import '../viewers/unsupported_viewer.dart';
 import '../widgets/diagnostic_banner.dart';
@@ -51,6 +52,26 @@ class _ViewerScreenState extends State<ViewerScreen> {
           formatId: widget.detectionResult.formatId,
         );
       case 'document':
+        if (widget.detectionResult.formatId == 'pdf') {
+          return PdfViewer(
+            fileSource: widget.fileSource,
+            detectionResult: widget.detectionResult,
+            onOpenInHex: () {
+              setState(() {
+                _forceHexView = true;
+              });
+            },
+          );
+        }
+        return UnsupportedViewer(
+          fileSource: widget.fileSource,
+          detectionResult: widget.detectionResult,
+          onOpenInHex: () {
+            setState(() {
+              _forceHexView = true;
+            });
+          },
+        );
       case 'media':
       case 'archive':
       default:

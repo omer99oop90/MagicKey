@@ -61,6 +61,17 @@ class AppLocalizations {
       'corruptedDesc': 'File extension does not match content signature. Raw byte inspection recommended.',
       'errorReading': 'Error reading file stream',
       'emptyFile': 'File is empty (0 bytes)',
+      // PDF Viewer
+      'pdfPageIndicator': 'Page {current} of {total}',
+      'pdfJumpToPage': 'Jump to Page',
+      'pdfInvalidPage': 'Invalid page number',
+      'pdfEncryptedTitle': 'Encrypted PDF',
+      'pdfEncryptedDesc': 'This PDF document is password-protected or encrypted and cannot be displayed natively.',
+      'pdfMalformedTitle': 'Corrupted PDF',
+      'pdfMalformedDesc': 'The PDF structure is corrupted or invalid and cannot be rendered.',
+      'pdfGoTo': 'Go',
+      'pdfCancel': 'Cancel',
+      'pdfEmpty': 'PDF document contains no pages',
     },
     'ar': {
       'appName': 'المفتاح السحري',
@@ -108,6 +119,17 @@ class AppLocalizations {
       'corruptedDesc': 'امتداد الملف لا يطابق البصمة الفعلية لمحتواه. يوصى بفحص البايتات الخام.',
       'errorReading': 'خطأ في قراءة دفق الملف',
       'emptyFile': 'الملف فارغ (0 بايت)',
+      // PDF Viewer
+      'pdfPageIndicator': 'صفحة {current} من {total}',
+      'pdfJumpToPage': 'الانتقال إلى صفحة',
+      'pdfInvalidPage': 'رقم الصفحة غير صالح',
+      'pdfEncryptedTitle': 'ملف PDF محمي بكلمة مرور',
+      'pdfEncryptedDesc': 'هذا المستند مشفر أو محمي بكلمة مرور ولا يمكن عرضه بشكل قياسي.',
+      'pdfMalformedTitle': 'ملف PDF تالف',
+      'pdfMalformedDesc': 'بنية ملف PDF تالفة أو غير صالحة ولا يمكن معالجتها.',
+      'pdfGoTo': 'انتقال',
+      'pdfCancel': 'إلغاء',
+      'pdfEmpty': 'المستند لا يحتوي على أي صفحات',
     },
   };
 
