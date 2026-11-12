@@ -17,7 +17,9 @@ class MainActivity : FlutterActivity() {
     private val REQUEST_CODE_OPEN_DOCUMENT = 4201
 
     private var pendingResult: MethodChannel.Result? = null
-    private var initialIntentUri: String? = null
+    private var pendingIntentUri: String? = null
+    private var isFlutterReady: Boolean = false
+    private var methodChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,35 +28,61 @@ class MainActivity : FlutterActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIncomingIntent(intent)
     }
 
+    private fun extractUriFromIntent(intent: Intent?): String? {
+        if (intent == null) return null
+        val action = intent.action ?: return null
+        return when (action) {
+            Intent.ACTION_VIEW -> {
+                intent.data?.toString()
+            }
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                uri?.toString()
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                uris?.firstOrNull()?.toString()
+            }
+            else -> null
+        }
+    }
+
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent == null) return
-        val action = intent.action
-        if (Intent.ACTION_VIEW == action) {
-            intent.data?.let { uri ->
-                initialIntentUri = uri.toString()
-            }
-        } else if (Intent.ACTION_SEND == action) {
-            @Suppress("DEPRECATION")
-            val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            uri?.let {
-                initialIntentUri = it.toString()
-            }
-        } else if (Intent.ACTION_SEND_MULTIPLE == action) {
-            @Suppress("DEPRECATION")
-            val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-            uris?.firstOrNull()?.let {
-                initialIntentUri = it.toString()
-            }
+        val uriStr = extractUriFromIntent(intent) ?: return
+
+        try {
+            val uri = Uri.parse(uriStr)
+            val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, takeFlags)
+        } catch (_: SecurityException) {
+            // Not all document providers support persistable permissions
+        } catch (_: Exception) {}
+
+        deliverOrQueueIntentUri(uriStr)
+    }
+
+    private fun deliverOrQueueIntentUri(uriStr: String) {
+        val channel = methodChannel
+        if (isFlutterReady && channel != null) {
+            channel.invokeMethod("onNewIntentUri", uriStr)
+        } else {
+            pendingIntentUri = uriStr
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        methodChannel = channel
+
+        channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "openDocument" -> {
                     if (pendingResult != null) {
@@ -81,9 +109,19 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "getInitialIntentUri" -> {
-                    val uri = initialIntentUri
-                    initialIntentUri = null
+                    isFlutterReady = true
+                    val uri = pendingIntentUri
+                    pendingIntentUri = null
                     result.success(uri)
+                }
+                "notifyReadyForIntents" -> {
+                    isFlutterReady = true
+                    val uri = pendingIntentUri
+                    if (uri != null) {
+                        pendingIntentUri = null
+                        channel.invokeMethod("onNewIntentUri", uri)
+                    }
+                    result.success(true)
                 }
                 "getMetadata" -> {
                     val uriStr = call.argument<String>("uri")
@@ -193,5 +231,11 @@ class MainActivity : FlutterActivity() {
             "name" to name,
             "size" to size
         )
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        super.cleanUpFlutterEngine(flutterEngine)
+        methodChannel = null
+        isFlutterReady = false
     }
 }

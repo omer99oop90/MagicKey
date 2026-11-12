@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -29,10 +30,29 @@ class _HomeScreenState extends State<HomeScreen> {
   final FileService _fileService = FileService();
   final RecentFilesService _recentService = RecentFilesService.instance;
   bool _isOpening = false;
+  StreamSubscription<FileSource>? _intentSubscription;
 
   @override
   void initState() {
     super.initState();
+    _initIntentHandling();
+  }
+
+  @override
+  void dispose() {
+    _intentSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _initIntentHandling() {
+    _intentSubscription = _fileService.onIncomingFile.listen((incomingFile) {
+      if (mounted) {
+        // Dismiss any active viewer screen to return to home and display the newly incoming file
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _openFile(incomingFile);
+      }
+    });
+
     _checkInitialIntent();
   }
 
