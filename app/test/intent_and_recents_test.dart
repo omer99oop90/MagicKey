@@ -116,7 +116,8 @@ void main() {
             return uri;
           }
           if (call.method == 'getMetadata') {
-            final uriStr = call.argument<String>('uri');
+            final args = call.arguments as Map?;
+            final uriStr = args?['uri'] as String?;
             return {
               'uri': uriStr,
               'name': mockMetadata?['name'] ?? 'file',
