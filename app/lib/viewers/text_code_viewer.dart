@@ -22,6 +22,7 @@ class _TextCodeViewerState extends State<TextCodeViewer> {
   String? _errorMessage;
   bool _wrapLines = false;
   int _lineCount = 0;
+  bool _isTruncated = false;
 
   @override
   void initState() {
@@ -37,12 +38,13 @@ class _TextCodeViewerState extends State<TextCodeViewer> {
 
     try {
       // Bounded read: reads up to 1 MB of text to prevent OOM
-      final text = await widget.fileSource.readText(maxBytes: 1024 * 1024);
-      final lines = text.split('\n');
+      final content = await widget.fileSource.readTextContent(maxBytes: 1024 * 1024);
+      final lines = content.text.split('\n');
 
       setState(() {
-        _content = text;
+        _content = content.text;
         _lineCount = lines.length;
+        _isTruncated = content.isTruncated;
         _isLoading = false;
       });
     } catch (e) {
@@ -111,6 +113,27 @@ class _TextCodeViewerState extends State<TextCodeViewer> {
                   color: isDark ? Colors.grey[400] : Colors.grey[600],
                 ),
               ),
+              if (_isTruncated) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: Colors.amber.withOpacity(0.4),
+                    ),
+                  ),
+                  child: const Text(
+                    '1 MB Limit',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
               IconButton(
                 icon: Icon(
@@ -123,6 +146,41 @@ class _TextCodeViewerState extends State<TextCodeViewer> {
             ],
           ),
         ),
+
+        // Truncation Notice Banner
+        if (_isTruncated)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? const Color(0xFF78350F) : const Color(0xFFFDE68A),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'File exceeds 1 MB reading limit. Displaying initial section (${widget.fileSource.formattedSize} total).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // Text Viewer Area
         Expanded(

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-alpha.6] — 2026-11-12
+
+### Fixed & Enhanced (Phase 2.3.2: UTF-8 Boundary Correction)
+- **UTF-8 Truncation Boundary Preservation (`app/lib/models/file_source.dart`):**
+  - Implemented `findUtf8SafeLength(bytes, isTruncated)` to detect and exclude incomplete trailing 2-byte (Arabic), 3-byte (Euro/symbols), and 4-byte (emojis) UTF-8 sequences when reading reaches the 1 MB buffer boundary.
+  - Guarantees complete UTF-8 characters are preserved without generating false replacement characters (`U+FFFD`) merely because the read limit split a character.
+  - Genuinely malformed UTF-8 sequences within the stream body remain correctly flagged with `U+FFFD`.
+- **Memory Ceiling Preservation & Zero-OOM Streaming:**
+  - Maintained strict $O(1)$ memory limits ($< 1.05$ MB peak buffer) while accurately detecting whether a file exceeded the 1 MB reading threshold via bounded probing.
+- **Text Viewer Truncation Notice Banner & Toolbar Badge (`app/lib/viewers/text_code_viewer.dart`):**
+  - Added `TextContent` model carrying `isTruncated` and `bytesRead` metadata to viewer consumers.
+  - Added amber truncation notice banner below the top toolbar indicating: *"File exceeds 1 MB reading limit. Displaying initial section ({size} total)."*
+  - Added a visual `"1 MB Limit"` pill badge in the viewer toolbar next to line counts.
+- **Exhaustive Unit Test Suite (`app/test/models_and_logic_test.dart`):**
+  - Replaced weak boundary test with rigorous deterministic assertions verifying exact decoded outputs for Arabic 2-byte, 3-byte, and 4-byte UTF-8 characters.
+  - Validated all boundary split permutations (1/2, 1/3, 2/3, 1/4, 2/4, 3/4) produce clean text with zero `U+FFFD`.
+  - Validated files ending exactly at the reading boundary decode 100% of bytes without data loss.
+
 ## [0.1.0-alpha.5] — 2026-11-12
 
 ### Fixed & Enhanced (Phase 2.3: Core File Opening Validation)
