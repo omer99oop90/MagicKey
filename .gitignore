@@ -23,3 +23,6 @@ app/android/app/build/
 
 # Host FFI test artifact
 app/libmagickey_core.so
+
+# Local download / release artifacts
+build_output/
