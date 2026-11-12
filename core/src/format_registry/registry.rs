@@ -232,13 +232,13 @@ impl FormatRegistry {
         // Archive Formats
         self.register(FormatDefinition::new(
             "zip",
-            "ZIP Archive",
+            "ZIP Archive / Package",
             "application/zip",
-            vec!["zip"],
+            vec!["zip", "apk", "jar"],
             FileCategory::Archive,
             ViewerEngine::Archive,
             SupportStatus::Supported,
-            "Ubiquitous lossless compressed archive format.",
+            "Ubiquitous lossless compressed archive and application package format.",
         ));
         self.register(FormatDefinition::new(
             "gzip",

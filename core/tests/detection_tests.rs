@@ -57,6 +57,12 @@ fn test_magic_bytes_detection_standard_formats() {
     assert_eq!(res.category, FileCategory::Archive);
     assert_eq!(res.suggested_viewer, ViewerEngine::Archive);
 
+    // 7b. APK (ZIP-based Android Package with .apk hint)
+    let res_apk = detector.detect_buffer(&zip_header, Some("apk"));
+    assert_eq!(res_apk.format_id, "zip");
+    assert_eq!(res_apk.category, FileCategory::Archive);
+    assert_eq!(res_apk.confidence, DetectionConfidence::High);
+
     // 8. GZIP
     let gz_header = [0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00];
     let res = detector.detect_buffer(&gz_header, None);

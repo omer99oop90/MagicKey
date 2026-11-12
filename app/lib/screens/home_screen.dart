@@ -43,12 +43,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _handleOpenFile() async {
+  Future<void> _handleOpenFile({String mimeType = '*/*'}) async {
     if (_isOpening) return;
     setState(() => _isOpening = true);
 
     try {
-      final fileSource = await _fileService.pickFile();
+      final fileSource = await _fileService.pickFile(mimeType: mimeType);
       if (fileSource != null && mounted) {
         await _openFile(fileSource);
       }
@@ -60,24 +60,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openFile(FileSource fileSource) async {
-    // 1. Identify format via Rust core detection engine
-    final detection = await _fileService.identifyFile(fileSource);
+    try {
+      // 1. Identify format via Rust core detection engine
+      final detection = await _fileService.identifyFile(fileSource);
 
-    // 2. Add to recent files locally
-    _recentService.add(fileSource);
+      // 2. Add to recent files locally
+      _recentService.add(fileSource);
 
-    // 3. Navigate to Universal Viewer Screen
-    if (mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => ViewerScreen(
-            fileSource: fileSource,
-            detectionResult: detection,
+      // 3. Navigate to Universal Viewer Screen
+      if (mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ViewerScreen(
+              fileSource: fileSource,
+              detectionResult: detection,
+            ),
           ),
-        ),
-      );
-      // Refresh recents on return
-      setState(() {});
+        );
+        // Refresh recents on return
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -225,7 +236,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                const CategoryGrid(),
+                CategoryGrid(
+                  onCategorySelected: (cat) => _handleOpenFile(mimeType: cat.mimeType),
+                ),
                 const SizedBox(height: 32),
 
                 // Recent Files Section

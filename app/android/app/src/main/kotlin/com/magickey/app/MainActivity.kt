@@ -62,9 +62,16 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
                     pendingResult = result
+                    val mimeType = call.argument<String>("mimeType") ?: "*/*"
                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
+                        if (mimeType.contains(",")) {
+                            type = "*/*"
+                            val types = mimeType.split(",").map { it.trim() }.toTypedArray()
+                            putExtra(Intent.EXTRA_MIME_TYPES, types)
+                        } else {
+                            type = mimeType
+                        }
                     }
                     try {
                         startActivityForResult(intent, REQUEST_CODE_OPEN_DOCUMENT)

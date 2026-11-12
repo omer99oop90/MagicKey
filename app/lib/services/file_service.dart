@@ -8,10 +8,13 @@ class FileService {
   static const MethodChannel _safChannel = MethodChannel('com.magickey/saf');
   final CoreBindings _bindings = CoreBindings.instance;
 
-  /// Launches Android Storage Access Framework to pick any file (*/*).
-  Future<FileSource?> pickFile() async {
+  /// Launches Android Storage Access Framework to pick a file with optional MIME filter.
+  Future<FileSource?> pickFile({String mimeType = '*/*'}) async {
     try {
-      final res = await _safChannel.invokeMapMethod<String, dynamic>('openDocument');
+      final res = await _safChannel.invokeMapMethod<String, dynamic>(
+        'openDocument',
+        {'mimeType': mimeType},
+      );
       if (res == null) return null;
 
       final uriStr = res['uri'] as String?;
@@ -56,18 +59,31 @@ class FileService {
 
   /// Identifies the format of a FileSource using the Rust core detection engine.
   Future<DetectionResult> identifyFile(FileSource source) async {
-    // If it's a local filesystem path, call direct file detector
-    if (source.path != null && source.path!.isNotEmpty) {
-      try {
-        return _bindings.detectFile(source.path!);
-      } catch (_) {}
-    }
+    try {
+      // If it's a local filesystem path, call direct file detector
+      if (source.path != null && source.path!.isNotEmpty) {
+        try {
+          return _bindings.detectFile(source.path!);
+        } catch (_) {}
+      }
 
-    // Otherwise, read bounded 512-byte header and pass to FFI buffer detector
-    final header = await source.readHeader(512);
-    return _bindings.detectBuffer(
-      header,
-      extensionHint: source.extensionHint,
-    );
+      // Otherwise, read bounded 512-byte header and pass to FFI buffer detector
+      final header = await source.readHeader(512);
+      return _bindings.detectBuffer(
+        header,
+        extensionHint: source.extensionHint,
+      );
+    } catch (e) {
+      return DetectionResult(
+        formatId: 'unknown_binary',
+        displayName: 'Unclassified Stream',
+        mimeType: 'application/octet-stream',
+        category: 'binary',
+        confidence: 'low',
+        detectionMethod: 'fallback',
+        suggestedViewer: 'hex',
+        details: 'Detection failed defensively: $e',
+      );
+    }
   }
 }

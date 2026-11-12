@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
@@ -51,28 +52,35 @@ class LocalPathFileSource extends FileSource {
 
   @override
   Future<Uint8List> readHeader(int maxBytes) async {
-    // Implemented via standard dart:io or native channel
-    final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
-      'readPathHeader',
-      {'path': path, 'maxBytes': maxBytes},
-    );
-    return bytes ?? Uint8List(0);
+    try {
+      final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
+        'readPathHeader',
+        {'path': path, 'maxBytes': maxBytes},
+      );
+      return bytes ?? Uint8List(0);
+    } catch (_) {
+      return Uint8List(0);
+    }
   }
 
   @override
   Future<Uint8List> readChunk(int offset, int length) async {
-    final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
-      'readPathChunk',
-      {'path': path, 'offset': offset, 'length': length},
-    );
-    return bytes ?? Uint8List(0);
+    try {
+      final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
+        'readPathChunk',
+        {'path': path, 'offset': offset, 'length': length},
+      );
+      return bytes ?? Uint8List(0);
+    } catch (_) {
+      return Uint8List(0);
+    }
   }
 
   @override
   Future<String> readText({int maxBytes = 1048576}) async {
     final toRead = size > 0 ? size.clamp(0, maxBytes) : maxBytes;
     final chunk = await readChunk(0, toRead);
-    return String.fromCharCodes(chunk);
+    return utf8.decode(chunk, allowMalformed: true);
   }
 }
 
@@ -126,6 +134,6 @@ class AndroidUriFileSource extends FileSource {
   Future<String> readText({int maxBytes = 1048576}) async {
     final toRead = size > 0 ? size.clamp(0, maxBytes) : maxBytes;
     final chunk = await readChunk(0, toRead);
-    return String.fromCharCodes(chunk);
+    return utf8.decode(chunk, allowMalformed: true);
   }
 }

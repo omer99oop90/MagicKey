@@ -20,3 +20,6 @@ app/android/app/build/
 *~
 .idea/
 .vscode/
+
+# Host FFI test artifact
+app/libmagickey_core.so

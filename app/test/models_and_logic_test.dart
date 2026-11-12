@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:magickey/models/detection_result.dart';
 import 'package:magickey/models/hex_chunk.dart';
 import 'package:magickey/models/file_source.dart';
+import 'package:magickey/widgets/category_grid.dart';
 
 void main() {
   group('Magic Key Model & Logic Unit Tests', () {
@@ -68,6 +69,31 @@ void main() {
 
       final sourceUnknown = AndroidUriFileSource(uri: 'content://test', name: 'unknown.bin', size: -1);
       expect(sourceUnknown.formattedSize, 'Unknown size');
+    });
+
+    test('FileSource extensionHint resolution', () {
+      final source = AndroidUriFileSource(uri: 'content://test', name: 'document.PDF', size: 100);
+      expect(source.extensionHint, 'pdf');
+
+      final sourceNoExt = AndroidUriFileSource(uri: 'content://test', name: 'README', size: 100);
+      expect(sourceNoExt.extensionHint, '');
+
+      final sourceApk = AndroidUriFileSource(uri: 'content://test', name: 'app-release.apk', size: 100);
+      expect(sourceApk.extensionHint, 'apk');
+    });
+
+    test('CategoryGrid configuration and MIME type filters', () {
+      expect(CategoryGrid.categories.length, 6);
+
+      final imageCat = CategoryGrid.categories.firstWhere((c) => c.id == 'image');
+      expect(imageCat.mimeType, 'image/*');
+      expect(imageCat.formatsHint, contains('PNG'));
+
+      final textCat = CategoryGrid.categories.firstWhere((c) => c.id == 'text_code');
+      expect(textCat.mimeType, 'text/*');
+
+      final archiveCat = CategoryGrid.categories.firstWhere((c) => c.id == 'archive');
+      expect(archiveCat.formatsHint, contains('ZIP, APK'));
     });
   });
 }
