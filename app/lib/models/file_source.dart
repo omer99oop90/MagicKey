@@ -65,21 +65,20 @@ class LocalPathFileSource extends FileSource {
 
   @override
   Future<Uint8List> readChunk(int offset, int length) async {
-    try {
-      final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
-        'readPathChunk',
-        {'path': path, 'offset': offset, 'length': length},
-      );
-      return bytes ?? Uint8List(0);
-    } catch (_) {
-      return Uint8List(0);
-    }
+    final bytes = await MethodChannel('com.magickey/saf').invokeMethod<Uint8List>(
+      'readPathChunk',
+      {'path': path, 'offset': offset, 'length': length},
+    );
+    return bytes ?? Uint8List(0);
   }
 
   @override
   Future<String> readText({int maxBytes = 1048576}) async {
     final toRead = size > 0 ? size.clamp(0, maxBytes) : maxBytes;
     final chunk = await readChunk(0, toRead);
+    if (size > 0 && chunk.isEmpty) {
+      throw StateError('File stream yielded 0 bytes despite expected size ($size B)');
+    }
     return utf8.decode(chunk, allowMalformed: true);
   }
 }
@@ -119,21 +118,20 @@ class AndroidUriFileSource extends FileSource {
 
   @override
   Future<Uint8List> readChunk(int offset, int length) async {
-    try {
-      final bytes = await _safChannel.invokeMethod<Uint8List>(
-        'readUriChunk',
-        {'uri': uri, 'offset': offset, 'length': length},
-      );
-      return bytes ?? Uint8List(0);
-    } catch (_) {
-      return Uint8List(0);
-    }
+    final bytes = await _safChannel.invokeMethod<Uint8List>(
+      'readUriChunk',
+      {'uri': uri, 'offset': offset, 'length': length},
+    );
+    return bytes ?? Uint8List(0);
   }
 
   @override
   Future<String> readText({int maxBytes = 1048576}) async {
     final toRead = size > 0 ? size.clamp(0, maxBytes) : maxBytes;
     final chunk = await readChunk(0, toRead);
+    if (size > 0 && chunk.isEmpty) {
+      throw StateError('File stream yielded 0 bytes despite expected size ($size B)');
+    }
     return utf8.decode(chunk, allowMalformed: true);
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magickey/models/detection_result.dart';
 import 'package:magickey/models/hex_chunk.dart';
@@ -94,6 +95,20 @@ void main() {
 
       final archiveCat = CategoryGrid.categories.firstWhere((c) => c.id == 'archive');
       expect(archiveCat.formatsHint, contains('ZIP, APK'));
+    });
+
+    test('UTF-8 multi-byte decoding handles boundaries and international text', () {
+      // 1. Arabic text stream simulation: "المفتاح السحري"
+      const arabicText = 'المفتاح السحري';
+      final arabicBytes = utf8.encode(arabicText);
+      final decoded = utf8.decode(arabicBytes, allowMalformed: true);
+      expect(decoded, arabicText);
+
+      // 2. Multi-byte boundary truncation simulation with allowMalformed: true
+      // Taking a slice that splits a 2-byte UTF-8 Arabic letter in half
+      final truncatedBytes = arabicBytes.sublist(0, 3);
+      final decodedTruncated = utf8.decode(truncatedBytes, allowMalformed: true);
+      expect(decodedTruncated.isNotEmpty, isTrue);
     });
   });
 }
