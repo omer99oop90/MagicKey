@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magickey/l10n/app_localizations.dart';
 import 'package:magickey/models/detection_result.dart';
@@ -10,6 +11,32 @@ import 'package:magickey/screens/viewer_screen.dart';
 import 'package:magickey/services/pdf_service.dart';
 import 'package:magickey/viewers/pdf_viewer.dart';
 import 'package:magickey/viewers/unsupported_viewer.dart';
+
+// Valid 1x1 transparent PNG byte array
+final Uint8List kValidPngBytes = Uint8List.fromList([
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+  0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+]);
+
+Widget createTestApp(Widget child) {
+  return MaterialApp(
+    supportedLocales: const [
+      Locale('en', 'US'),
+      Locale('ar', 'SA'),
+    ],
+    localizationsDelegates: const [
+      AppLocalizationsDelegate(),
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    home: child,
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -126,14 +153,14 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(pdfChannel, (MethodCall call) async {
         if (call.method == 'renderPage') {
-          return Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+          return kValidPngBytes;
         }
         return null;
       });
 
       final service = PdfService.instance;
       final bytes = await service.renderPage(sessionId: 'mock_session_456', pageIndex: 0);
-      expect(bytes.length, 4);
+      expect(bytes.length, kValidPngBytes.length);
       expect(bytes[0], 0x89);
     });
 
@@ -169,9 +196,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: const [AppLocalizationsDelegate()],
-          home: ViewerScreen(
+        createTestApp(
+          ViewerScreen(
             fileSource: source,
             detectionResult: detection,
           ),
@@ -196,9 +222,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: const [AppLocalizationsDelegate()],
-          home: ViewerScreen(
+        createTestApp(
+          ViewerScreen(
             fileSource: source,
             detectionResult: detection,
           ),
@@ -240,9 +265,8 @@ void main() {
       bool hexClicked = false;
 
       await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: const [AppLocalizationsDelegate()],
-          home: Scaffold(
+        createTestApp(
+          Scaffold(
             body: PdfViewer(
               fileSource: source,
               detectionResult: detection,
@@ -256,7 +280,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Corrupted PDF Document'), findsOneWidget);
+      expect(find.text('Corrupted PDF'), findsOneWidget);
       expect(find.byIcon(Icons.broken_image_outlined), findsOneWidget);
       expect(find.text('Open in Hex Viewer'), findsOneWidget);
 
@@ -286,9 +310,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: const [AppLocalizationsDelegate()],
-          home: Scaffold(
+        createTestApp(
+          Scaffold(
             body: PdfViewer(
               fileSource: source,
               detectionResult: detection,
@@ -299,7 +322,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Encrypted PDF Document'), findsOneWidget);
+      expect(find.text('Encrypted PDF'), findsOneWidget);
       expect(find.byIcon(Icons.lock_outline), findsOneWidget);
     });
 
@@ -318,7 +341,7 @@ void main() {
           };
         }
         if (call.method == 'renderPage') {
-          return Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+          return kValidPngBytes;
         }
         if (call.method == 'closePdf') {
           return null;
@@ -339,9 +362,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: const [AppLocalizationsDelegate()],
-          home: Scaffold(
+        createTestApp(
+          Scaffold(
             body: PdfViewer(
               fileSource: source,
               detectionResult: detection,
