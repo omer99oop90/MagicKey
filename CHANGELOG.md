@@ -31,8 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `"apk"` and `"jar"` to the known extensions list for the `zip` format in `file_detection/signatures.json` and `core/src/format_registry/registry.rs`.
   - Android application packages (`.apk`) are now recognized as valid ZIP packages without triggering false "Format Mismatch" warnings.
   - Added integration test `test_magic_bytes_detection_standard_formats` verification for `.apk` hints in `core/tests/detection_tests.rs`.
-- **Defensive Error Containment:**
+- **Defensive Error Containment & IO Exception Propagation:**
   - Wrapped `FileService.identifyFile()` in defensive try/catch returning safe fallback `DetectionResult` on stream read errors.
+  - Hardened `readChunk()` to propagate OS `PlatformException` (IO_ERROR, permission denial) to viewer engines rather than swallowing errors as empty files, allowing `TextCodeViewer`, `ImageViewer`, and `HexViewer` retry error UIs to properly activate.
+  - Added empty-stream guard in `readText()` to reject zero-byte streams when expected size > 0.
   - Wrapped `HomeScreen._openFile()` in defensive try/catch with snackbar feedback.
 
 ## [0.1.0-alpha.4] — 2026-11-11
