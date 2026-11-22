@@ -72,6 +72,8 @@ class AppLocalizations {
       'pdfGoTo': 'Go',
       'pdfCancel': 'Cancel',
       'pdfEmpty': 'PDF document contains no pages',
+      'imageToBinary': 'Image to Binary',
+      'imageToBinaryDesc': 'Convert PNG/JPG/WEBP to binary & reconstruct',
     },
     'ar': {
       'appName': 'المفتاح السحري',
@@ -130,6 +132,8 @@ class AppLocalizations {
       'pdfGoTo': 'انتقال',
       'pdfCancel': 'إلغاء',
       'pdfEmpty': 'المستند لا يحتوي على أي صفحات',
+      'imageToBinary': 'تحويل الصورة إلى ثنائي',
+      'imageToBinaryDesc': 'تحويل PNG/JPG/WEBP إلى بتات ثنائية وإعادة بنائها',
     },
   };
 

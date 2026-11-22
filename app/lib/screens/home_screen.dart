@@ -7,6 +7,7 @@ import '../models/file_source.dart';
 import '../services/file_service.dart';
 import '../services/recent_files_service.dart';
 import '../widgets/category_grid.dart';
+import 'image_to_binary_screen.dart';
 import 'viewer_screen.dart';
 
 /// Minimalist, hyper-focused Home Screen for Magic Key.
@@ -244,7 +245,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 36),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ImageToBinaryScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.memory_outlined, size: 20),
+                    label: Text(
+                      l10n.get('imageToBinary'),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
 
                 // Supported Categories Section
                 Row(

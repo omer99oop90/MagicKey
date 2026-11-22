@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import '../ffi/core_bindings.dart';
 import '../models/detection_result.dart';
@@ -138,5 +139,72 @@ class FileService {
         details: 'Detection failed defensively: $e',
       );
     }
+  }
+
+  /// Launches Android SAF document creation dialog and returns the selected URI string, or null if cancelled.
+  Future<String?> createDocument({
+    required String fileName,
+    String mimeType = 'application/octet-stream',
+  }) async {
+    try {
+      return await _safChannel.invokeMethod<String>(
+        'createDocument',
+        {
+          'fileName': fileName,
+          'mimeType': mimeType,
+        },
+      );
+    } on PlatformException catch (_) {
+      return null;
+    }
+  }
+
+  /// Streams arbitrary chunks into an Android SAF URI without buffering an entire large output in native IPC.
+  Future<void> writeDocumentStream(
+    String uri,
+    Iterable<Uint8List> chunks,
+  ) async {
+    final sessionId = await _safChannel.invokeMethod<String>(
+      'openUriWriteSession',
+      {'uri': uri},
+    );
+    if (sessionId == null || sessionId.isEmpty) {
+      throw StateError('Failed to open SAF write session for $uri');
+    }
+
+    try {
+      for (final chunk in chunks) {
+        if (chunk.isEmpty) continue;
+        await _safChannel.invokeMethod(
+          'writeUriSessionChunk',
+          {
+            'sessionId': sessionId,
+            'bytes': chunk,
+          },
+        );
+      }
+    } finally {
+      await _safChannel.invokeMethod(
+        'closeUriWriteSession',
+        {'sessionId': sessionId},
+      );
+    }
+  }
+
+  /// Writes a byte buffer to an Android SAF URI in bounded chunks.
+  Future<void> writeDocumentBytes(
+    String uri,
+    Uint8List bytes, {
+    int chunkSize = 262144,
+  }) async {
+    Iterable<Uint8List> sliceChunks() sync* {
+      if (bytes.isEmpty) return;
+      for (int offset = 0; offset < bytes.length; offset += chunkSize) {
+        final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
+        yield Uint8List.sublistView(bytes, offset, end);
+      }
+    }
+
+    await writeDocumentStream(uri, sliceChunks());
   }
 }

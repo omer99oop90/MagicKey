@@ -18,6 +18,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,11 +26,14 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.magickey/saf"
     private val PDF_CHANNEL = "com.magickey/pdf"
     private val REQUEST_CODE_OPEN_DOCUMENT = 4201
+    private val REQUEST_CODE_CREATE_DOCUMENT = 4202
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingSaveResult: MethodChannel.Result? = null
     private var pendingIntentUri: String? = null
     private var isFlutterReady: Boolean = false
     private var methodChannel: MethodChannel? = null
+    private val activeWriteSessions = ConcurrentHashMap<String, OutputStream>()
 
     // PDF Session Management
     private class PdfSession(
@@ -214,6 +218,70 @@ class MainActivity : FlutterActivity() {
                         result.error("IO_ERROR", "Error reading URI chunk: ${e.message}", null)
                     }
                 }
+                "createDocument" -> {
+                    if (pendingSaveResult != null) {
+                        result.error("BUSY", "A save file session is already active", null)
+                        return@setMethodCallHandler
+                    }
+                    pendingSaveResult = result
+                    val fileName = call.argument<String>("fileName") ?: "output.bin"
+                    val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = mimeType
+                        putExtra(Intent.EXTRA_TITLE, fileName)
+                    }
+                    try {
+                        startActivityForResult(intent, REQUEST_CODE_CREATE_DOCUMENT)
+                    } catch (e: Exception) {
+                        pendingSaveResult = null
+                        result.error("UNAVAILABLE", "Storage Access Framework save dialog is unavailable: ${e.message}", null)
+                    }
+                }
+                "openUriWriteSession" -> {
+                    val uriStr = call.argument<String>("uri")
+                    if (uriStr == null) {
+                        result.error("INVALID_ARGS", "Missing URI argument", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val uri = Uri.parse(uriStr)
+                        val stream = contentResolver.openOutputStream(uri, "wt")
+                            ?: contentResolver.openOutputStream(uri)
+                            ?: throw IOException("Failed to open output stream for URI")
+                        val sessionId = UUID.randomUUID().toString()
+                        activeWriteSessions[sessionId] = stream
+                        result.success(sessionId)
+                    } catch (e: Exception) {
+                        result.error("IO_ERROR", "Error opening output stream: ${e.message}", null)
+                    }
+                }
+                "writeUriSessionChunk" -> {
+                    val sessionId = call.argument<String>("sessionId")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val stream = if (sessionId != null) activeWriteSessions[sessionId] else null
+                    if (stream == null || bytes == null) {
+                        result.error("INVALID_SESSION", "Write session not found or missing bytes", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        stream.write(bytes)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("IO_ERROR", "Error writing chunk: ${e.message}", null)
+                    }
+                }
+                "closeUriWriteSession" -> {
+                    val sessionId = call.argument<String>("sessionId")
+                    val stream = if (sessionId != null) activeWriteSessions.remove(sessionId) else null
+                    try {
+                        stream?.flush()
+                        stream?.close()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("IO_ERROR", "Error closing output stream: ${e.message}", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -372,6 +440,14 @@ class MainActivity : FlutterActivity() {
                 // User cancelled or selection failed
                 res?.success(null)
             }
+        } else if (requestCode == REQUEST_CODE_CREATE_DOCUMENT) {
+            val res = pendingSaveResult
+            pendingSaveResult = null
+            if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                res?.success(data.data!!.toString())
+            } else {
+                res?.success(null)
+            }
         }
     }
 
@@ -409,5 +485,9 @@ class MainActivity : FlutterActivity() {
             session.close()
         }
         activePdfSessions.clear()
+        for ((_, stream) in activeWriteSessions) {
+            try { stream.close() } catch (_: Exception) {}
+        }
+        activeWriteSessions.clear()
     }
 }
