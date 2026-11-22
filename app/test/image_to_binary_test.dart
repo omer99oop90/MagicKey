@@ -250,35 +250,37 @@ void main() {
   });
 
   group('ImageToBinaryScreen Arabic RTL Widget Tests', () {
+    Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+    }
+
     testWidgets('Renders Arabic RTL interface and enforces metadata requirement on reconstruction',
         (WidgetTester tester) async {
       await tester.pumpWidget(_createTestApp(const ImageToBinaryScreen()));
       await tester.pumpAndSettle();
 
-      // Verify RTL directionality
-      final dir = tester.widget<Directionality>(find.byType(Directionality).first);
-      expect(dir.textDirection, TextDirection.rtl);
+      // Verify effective RTL directionality inside ImageToBinaryScreen
+      final effectiveDir = Directionality.of(
+        tester.element(find.text('تحويل الصورة إلى ثنائي')),
+      );
+      expect(effectiveDir, TextDirection.rtl);
 
       // Verify main Arabic header and workflow steps
       expect(find.text('تحويل الصورة إلى ثنائي'), findsOneWidget);
       expect(find.text('اختيار صورة من الجهاز'), findsOneWidget);
 
       // Switch to 1-bit monochrome mode and confirm threshold slider appears
-      final monoFinder = find.text('أبيض وأسود (1 بت)');
-      await tester.ensureVisible(monoFinder);
-      await tester.tap(monoFinder);
+      await tapVisible(tester, find.text('أبيض وأسود (1 بت)'));
       await tester.pumpAndSettle();
       expect(find.text('عتبة الأبيض والأسود:'), findsOneWidget);
       expect(find.byType(Slider), findsOneWidget);
 
       // Switch to reconstruction tab and verify it guards against missing .bin / metadata
-      final reconTabFinder = find.text('ثنائي ← صورة');
-      await tester.ensureVisible(reconTabFinder);
-      await tester.tap(reconTabFinder);
+      await tapVisible(tester, find.text('ثنائي ← صورة'));
       await tester.pumpAndSettle();
-      final reconBtnFinder = find.text('إعادة بناء الصورة');
-      await tester.ensureVisible(reconBtnFinder);
-      await tester.tap(reconBtnFinder);
+      await tapVisible(tester, find.text('إعادة بناء الصورة'));
       await tester.pumpAndSettle();
       expect(find.textContaining('يرجى اختيار ملف البيانات الثنائية (.bin)'), findsOneWidget);
     });
@@ -469,53 +471,39 @@ void main() {
         }
       }
 
-      await tester.tap(find.text('اختيار صورة من الجهاز'));
+      await tapVisible(tester, find.text('اختيار صورة من الجهاز'));
       await tester.pump();
       await waitForFinder(find.textContaining('1 × 1'));
       await tester.pumpAndSettle();
       expect(find.textContaining('1 × 1'), findsOneWidget);
 
-      final convertBtn = find.text('تحويل إلى بيانات ثنائية');
-      await tester.ensureVisible(convertBtn);
-      await tester.tap(convertBtn);
+      await tapVisible(tester, find.text('تحويل إلى بيانات ثنائية'));
       await tester.pumpAndSettle();
       expect(find.text('24'), findsOneWidget); // 24 bits
 
       // Export .bin and .meta.json
-      final exportBinBtn = find.textContaining('تصدير البيانات الفعلية (.bin');
-      await tester.ensureVisible(exportBinBtn);
-      await tester.tap(exportBinBtn);
+      await tapVisible(tester, find.textContaining('تصدير البيانات الفعلية (.bin'));
       await tester.pumpAndSettle();
 
-      final exportMetaBtn = find.textContaining('تصدير البيانات الوصفية المطلوبة');
-      await tester.ensureVisible(exportMetaBtn);
-      await tester.tap(exportMetaBtn);
+      await tapVisible(tester, find.textContaining('تصدير البيانات الوصفية المطلوبة'));
       await tester.pumpAndSettle();
 
       expect(writtenStreams['content://export/out.bin'], equals([255, 0, 0]));
       expect(writtenStreams['content://export/out.meta.json'], isNotEmpty);
 
       // Re-import exported .bin and .meta.json on reconstruction tab
-      final reconTab = find.text('ثنائي ← صورة');
-      await tester.ensureVisible(reconTab);
-      await tester.tap(reconTab);
+      await tapVisible(tester, find.text('ثنائي ← صورة'));
       await tester.pumpAndSettle();
 
       openMode = 'bin';
-      final pickBinBtn = find.text('اختيار ملف .bin');
-      await tester.ensureVisible(pickBinBtn);
-      await tester.tap(pickBinBtn);
+      await tapVisible(tester, find.text('اختيار ملف .bin'));
       await tester.pumpAndSettle();
 
       openMode = 'meta';
-      final pickMetaBtn = find.text('اختيار ملف البيانات الوصفية (.meta.json)');
-      await tester.ensureVisible(pickMetaBtn);
-      await tester.tap(pickMetaBtn);
+      await tapVisible(tester, find.text('اختيار ملف البيانات الوصفية (.meta.json)'));
       await tester.pumpAndSettle();
 
-      final reconBtn = find.text('إعادة بناء الصورة');
-      await tester.ensureVisible(reconBtn);
-      await tester.tap(reconBtn);
+      await tapVisible(tester, find.text('إعادة بناء الصورة'));
       await tester.pump();
       await waitForFinder(find.textContaining('تطابق تام 100%'));
       await tester.pumpAndSettle();
