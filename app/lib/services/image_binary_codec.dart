@@ -800,6 +800,173 @@ BinaryPreviewPage formatBinaryPage(
 /// Maximum raw byte size for which exporting an expanded 0/1 ASCII .txt representation is recommended.
 const int kMaxTxtExportRawBytes = 2 * 1024 * 1024;
 
+/// Maximum column-pair count for streaming a .compressed.txt representation.
+const int kMaxCompressedTxtExportPairs = 2 * 1024 * 1024;
+
+/// Maximum column-pair count for copying the full compressed text directly to the clipboard.
+const int kMaxCopyFullCompressedPairs = 250000;
+
+/// Text preview/export encoding modes supported in Step 3 & Step 4.
+enum BinaryTextEncodingMode {
+  standardBinary,
+  columnPairCompressed,
+}
+
+/// Decoder preference when pasting binary or compressed text in Binary -> Image.
+enum TextInputFormatPreference {
+  auto,
+  standardBinary,
+  columnPairCompressed,
+}
+
+/// Single row produced by splitting the raw bitstream into two halves and comparing column pairs.
+class CompressedPairRow {
+  final int pairIndex;
+  final String offsetHex;
+  final int col1Bit;
+  final int col2Bit;
+  final String token;
+
+  const CompressedPairRow({
+    required this.pairIndex,
+    required this.offsetHex,
+    required this.col1Bit,
+    required this.col2Bit,
+    required this.token,
+  });
+
+  String get formattedLine => '$offsetHex  $token';
+}
+
+/// Bounded single-page view over the custom column-pair compressed representation.
+class CompressedPreviewPage {
+  final int pageIndex;
+  final int totalPages;
+  final int startPair;
+  final int endPair;
+  final int totalPairs;
+  final bool hasOddPaddingBit;
+  final List<CompressedPairRow> rows;
+
+  const CompressedPreviewPage({
+    required this.pageIndex,
+    required this.totalPages,
+    required this.startPair,
+    required this.endPair,
+    required this.totalPairs,
+    required this.hasOddPaddingBit,
+    required this.rows,
+  });
+}
+
+/// Result of decoding pasted standard binary or signed-column compressed text.
+class DecodedTextPayload {
+  final Uint8List binaryBytes;
+  final BinaryTextEncodingMode detectedEncoding;
+  final int bitCount;
+  final int pairCount;
+  final ImageBinaryMetadata? headerMetadata;
+
+  const DecodedTextPayload({
+    required this.binaryBytes,
+    required this.detectedEncoding,
+    required this.bitCount,
+    required this.pairCount,
+    this.headerMetadata,
+  });
+}
+
+/// Returns MSB-first bit [0 or 1] at [bitIndex] inside [bytes].
+int _getBitMsb(Uint8List bytes, int bitIndex) {
+  return (bytes[bitIndex >> 3] >> (7 - (bitIndex & 7))) & 1;
+}
+
+/// Sets bit at [bitIndex] (MSB-first) to 1 inside [bytes].
+void _setBitMsb(Uint8List bytes, int bitIndex) {
+  bytes[bitIndex >> 3] |= 1 << (7 - (bitIndex & 7));
+}
+
+/// Encodes a single pair of bits into its signed-column token:
+/// identical -> '1-' or '0-'; different -> '1' or '0' (Column 1 only).
+String encodeColumnPairToken(int col1Bit, int col2Bit) {
+  if (col1Bit == col2Bit) {
+    return col1Bit == 1 ? '1-' : '0-';
+  }
+  return col1Bit == 1 ? '1' : '0';
+}
+
+/// Formats only a single bounded page of the column-pair compressed single-column output.
+CompressedPreviewPage formatCompressedBinaryPage(
+  Uint8List bytes, {
+  required int totalBits,
+  required int pageIndex,
+  int pairsPerPage = 64,
+}) {
+  if (bytes.isEmpty || totalBits <= 0) {
+    return const CompressedPreviewPage(
+      pageIndex: 0,
+      totalPages: 1,
+      startPair: 0,
+      endPair: 0,
+      totalPairs: 0,
+      hasOddPaddingBit: false,
+      rows: [],
+    );
+  }
+
+  final hasOddPad = (totalBits & 1) == 1;
+  final totalPairs = (totalBits + 1) >> 1;
+  final totalPages = math.max(1, (totalPairs + pairsPerPage - 1) ~/ pairsPerPage);
+  final safePage = pageIndex.clamp(0, totalPages - 1);
+  final startPair = safePage * pairsPerPage;
+  final endPair = math.min(totalPairs, startPair + pairsPerPage);
+
+  final rows = <CompressedPairRow>[];
+  for (int i = startPair; i < endPair; i++) {
+    final b1 = _getBitMsb(bytes, i);
+    final b2Index = i + totalPairs;
+    final b2 = b2Index < totalBits ? _getBitMsb(bytes, b2Index) : 0;
+    final token = encodeColumnPairToken(b1, b2);
+    rows.add(
+      CompressedPairRow(
+        pairIndex: i,
+        offsetHex: i.toRadixString(16).toUpperCase().padLeft(8, '0'),
+        col1Bit: b1,
+        col2Bit: b2,
+        token: token,
+      ),
+    );
+  }
+
+  return CompressedPreviewPage(
+    pageIndex: safePage,
+    totalPages: totalPages,
+    startPair: startPair,
+    endPair: endPair,
+    totalPairs: totalPairs,
+    hasOddPaddingBit: hasOddPad,
+    rows: rows,
+  );
+}
+
+/// Shared metadata header comment block used by .txt and compressed text exports.
+String buildTextExportHeader(
+  ImageBinaryMetadata metadata, {
+  String compression = 'none',
+}) {
+  final extraThreshold = metadata.threshold != null ? ' threshold=${metadata.threshold}' : '';
+  final extraPairs = compression == 'col_pair_v1'
+      ? ' pairs=${(metadata.totalBits + 1) >> 1} odd_pad=${(metadata.totalBits & 1) == 1 ? 1 : 0}'
+      : '';
+  return '# Magic Key Binary Representation\n'
+      '# width=${metadata.width} height=${metadata.height} '
+      'format=${metadata.pixelFormat.id} depth=${metadata.colorDepth} '
+      'channels=${metadata.channelOrder} bits=${metadata.totalBits} '
+      'bytes=${metadata.totalBytes} compression=$compression '
+      'crc32=${metadata.crc32Hex}$extraThreshold$extraPairs '
+      'file=${metadata.sourceFileName}\n';
+}
+
 /// Yields UTF-8 chunks of the 0/1 text representation without materializing a whole-file String.
 Iterable<Uint8List> streamTxtChunks(
   Uint8List bytes,
@@ -807,11 +974,9 @@ Iterable<Uint8List> streamTxtChunks(
   int bytesPerLine = 8,
   int chunkLineCount = 64,
 }) sync* {
-  final header = '# Magic Key Binary Representation\n'
-      '# file=${metadata.sourceFileName} width=${metadata.width} height=${metadata.height} '
-      'format=${metadata.pixelFormat.id} depth=${metadata.colorDepth} '
-      'channels=${metadata.channelOrder} bits=${metadata.totalBits} bytes=${metadata.totalBytes}\n';
-  yield Uint8List.fromList(utf8.encode(header));
+  yield Uint8List.fromList(
+    utf8.encode(buildTextExportHeader(metadata, compression: 'none')),
+  );
 
   final validBits = metadata.totalBits;
   final sb = StringBuffer();
@@ -822,10 +987,10 @@ Iterable<Uint8List> streamTxtChunks(
     sb.write(offset.toRadixString(16).toUpperCase().padLeft(8, '0'));
     sb.write(': ');
     for (int b = offset; b < rowEnd; b++) {
-      if (b > offset) sb.write(' ');
-      final fullBits = _kByteToBitsTable[bytes[b]];
       final remaining = validBits - (b * 8);
       if (remaining <= 0) break;
+      if (b > offset) sb.write(' ');
+      final fullBits = _kByteToBitsTable[bytes[b]];
       if (remaining < 8) {
         sb.write(fullBits.substring(0, remaining));
       } else {
@@ -845,6 +1010,341 @@ Iterable<Uint8List> streamTxtChunks(
   if (sb.isNotEmpty) {
     yield Uint8List.fromList(utf8.encode(sb.toString()));
   }
+}
+
+/// Yields UTF-8 chunks of the custom single-column compressed format ('1-', '0-', '1', '0').
+Iterable<Uint8List> streamCompressedTxtChunks(
+  Uint8List bytes,
+  ImageBinaryMetadata metadata, {
+  int chunkPairCount = 512,
+}) sync* {
+  yield Uint8List.fromList(
+    utf8.encode(buildTextExportHeader(metadata, compression: 'col_pair_v1')),
+  );
+
+  final totalBits = metadata.totalBits;
+  final totalPairs = (totalBits + 1) >> 1;
+  final sb = StringBuffer();
+  int countInChunk = 0;
+
+  for (int i = 0; i < totalPairs; i++) {
+    final b1 = _getBitMsb(bytes, i);
+    final b2Index = i + totalPairs;
+    final b2 = b2Index < totalBits ? _getBitMsb(bytes, b2Index) : 0;
+    sb.write(encodeColumnPairToken(b1, b2));
+    sb.write('\n');
+    countInChunk++;
+
+    if (countInChunk >= chunkPairCount) {
+      yield Uint8List.fromList(utf8.encode(sb.toString()));
+      sb.clear();
+      countInChunk = 0;
+    }
+  }
+
+  if (sb.isNotEmpty) {
+    yield Uint8List.fromList(utf8.encode(sb.toString()));
+  }
+}
+
+/// Materializes the full compressed text for small/medium payloads so users can copy in one tap.
+String buildFullCompressedText(
+  Uint8List bytes,
+  ImageBinaryMetadata metadata, {
+  bool includeHeader = true,
+}) {
+  final totalPairs = (metadata.totalBits + 1) >> 1;
+  if (totalPairs > kMaxCopyFullCompressedPairs) {
+    throw RangeError(
+      'عدد الأزواج ($totalPairs) كبير جداً للنسخ الكامل إلى الحافظة؛ استخدم التصدير إلى ملف بدلاً من ذلك.',
+    );
+  }
+  final sb = StringBuffer();
+  for (final chunk in streamCompressedTxtChunks(bytes, metadata)) {
+    final text = utf8.decode(chunk);
+    if (!includeHeader && sb.isEmpty && text.startsWith('#')) {
+      final lines = text.split('\n');
+      for (final line in lines) {
+        if (line.isNotEmpty && !line.startsWith('#')) {
+          sb.writeln(line);
+        }
+      }
+    } else {
+      sb.write(text);
+    }
+  }
+  return sb.toString().trimRight();
+}
+
+/// Extracts metadata from `# Magic Key` header comments in exported .txt or pasted text, if present.
+({ImageBinaryMetadata? metadata, String? compression}) parseTextExportHeader(String rawText) {
+  int? width;
+  int? height;
+  String? formatStr;
+  int? bits;
+  int? bytes;
+  int? threshold;
+  int? crc32;
+  String? compression;
+  String? fileName;
+
+  for (final rawLine in rawText.split('\n')) {
+    final line = rawLine.trim();
+    if (!line.startsWith('#')) continue;
+
+    final widthMatch = RegExp(r'\bwidth=(\d+)').firstMatch(line);
+    if (widthMatch != null) width = int.tryParse(widthMatch.group(1)!);
+
+    final heightMatch = RegExp(r'\bheight=(\d+)').firstMatch(line);
+    if (heightMatch != null) height = int.tryParse(heightMatch.group(1)!);
+
+    final formatMatch = RegExp(r'\bformat=([A-Za-z0-9_]+)').firstMatch(line);
+    if (formatMatch != null) formatStr = formatMatch.group(1);
+
+    final bitsMatch = RegExp(r'\bbits=(\d+)').firstMatch(line);
+    if (bitsMatch != null) bits = int.tryParse(bitsMatch.group(1)!);
+
+    final bytesMatch = RegExp(r'\bbytes=(\d+)').firstMatch(line);
+    if (bytesMatch != null) bytes = int.tryParse(bytesMatch.group(1)!);
+
+    final thrMatch = RegExp(r'\bthreshold=(\d+)').firstMatch(line);
+    if (thrMatch != null) threshold = int.tryParse(thrMatch.group(1)!);
+
+    final compMatch = RegExp(r'\bcompression=([A-Za-z0-9_]+)').firstMatch(line);
+    if (compMatch != null) compression = compMatch.group(1);
+
+    final crcMatch = RegExp(r'\bcrc32=([0-9A-Fa-f]{1,8})').firstMatch(line);
+    if (crcMatch != null) crc32 = int.tryParse(crcMatch.group(1)!, radix: 16);
+
+    final fileMatch = RegExp(r'\bfile=(.+)$').firstMatch(line);
+    if (fileMatch != null) fileName = fileMatch.group(1)?.trim();
+  }
+
+  if (width == null || height == null || formatStr == null || width <= 0 || height <= 0) {
+    return (metadata: null, compression: compression);
+  }
+
+  final pixelFormat = BinaryPixelFormatMeta.fromId(formatStr);
+  final pixelCount = width * height;
+  final expectedBits = switch (pixelFormat) {
+    BinaryPixelFormat.rgb888 => pixelCount * 24,
+    BinaryPixelFormat.gray8 => pixelCount * 8,
+    BinaryPixelFormat.mono1 => pixelCount,
+  };
+  final expectedBytes = switch (pixelFormat) {
+    BinaryPixelFormat.rgb888 => pixelCount * 3,
+    BinaryPixelFormat.gray8 => pixelCount,
+    BinaryPixelFormat.mono1 => (pixelCount + 7) >> 3,
+  };
+
+  final resolvedBits = bits ?? expectedBits;
+  final meta = ImageBinaryMetadata(
+    width: width,
+    height: height,
+    pixelFormat: pixelFormat,
+    colorDepth: pixelFormat.colorDepth,
+    bitDepthPerChannel: pixelFormat.bitDepthPerChannel,
+    channelOrder: pixelFormat.channelOrder,
+    pixelCount: pixelCount,
+    totalBytes: bytes ?? expectedBytes,
+    totalBits: resolvedBits,
+    paddingBits: pixelFormat == BinaryPixelFormat.mono1 ? (8 - (resolvedBits % 8)) % 8 : 0,
+    threshold: threshold,
+    isLossless: pixelFormat.isLosslessRgb,
+    sourceFileName: fileName ?? 'pasted_input',
+    sourceColorMode: 'Text Import',
+    crc32: crc32 ?? 0,
+    createdAt: DateTime.now().toUtc().toIso8601String(),
+  );
+
+  return (metadata: meta, compression: compression);
+}
+
+/// Strips `#` comments and optional hex row offsets (`00000000:` or `00000000  `) from pasted data lines.
+List<String> _extractDataLines(String rawText) {
+  final lines = <String>[];
+  final hexColonPrefix = RegExp(r'^[0-9A-Fa-f]{4,16}:\s+');
+  final hexSpacePrefix = RegExp(r'^[0-9A-Fa-f]{8}\s{2,}');
+
+  for (final rawLine in rawText.split('\n')) {
+    var line = rawLine.trim();
+    if (line.isEmpty || line.startsWith('#')) continue;
+    line = line.replaceFirst(hexColonPrefix, '');
+    line = line.replaceFirst(hexSpacePrefix, '');
+    line = line.trim();
+    if (line.isNotEmpty) lines.add(line);
+  }
+  return lines;
+}
+
+/// Auto-detects whether pasted text uses standard 0/1 binary or custom signed-column compression ('1-', '0').
+BinaryTextEncodingMode detectPastedTextFormat(
+  String rawText, {
+  ImageBinaryMetadata? expectedMetadata,
+}) {
+  final parsedHeader = parseTextExportHeader(rawText);
+  if (parsedHeader.compression == 'col_pair_v1') {
+    return BinaryTextEncodingMode.columnPairCompressed;
+  }
+  if (parsedHeader.compression == 'none') {
+    return BinaryTextEncodingMode.standardBinary;
+  }
+
+  final lines = _extractDataLines(rawText);
+  if (lines.isEmpty) {
+    return BinaryTextEncodingMode.standardBinary;
+  }
+
+  final tokens = lines.expand((l) => l.split(RegExp(r'\s+'))).where((t) => t.isNotEmpty).toList();
+  if (tokens.any((t) => t == '0-' || t == '1-')) {
+    return BinaryTextEncodingMode.columnPairCompressed;
+  }
+
+  // Edge case: all column pairs happened to differ (every token is single '0' or '1' on its own line)
+  final allSingleBitLines = lines.every((l) => l == '0' || l == '1');
+  if (allSingleBitLines) {
+    final targetBits = (expectedMetadata ?? parsedHeader.metadata)?.totalBits;
+    if (targetBits != null && ((targetBits + 1) >> 1) == lines.length && targetBits != lines.length) {
+      return BinaryTextEncodingMode.columnPairCompressed;
+    }
+  }
+
+  return BinaryTextEncodingMode.standardBinary;
+}
+
+/// Decodes pasted standard binary ('0'/'1') or custom column-pair compressed ('1-'/'0-'/'1'/'0') text.
+DecodedTextPayload decodePastedTextToBinary({
+  required String rawText,
+  ImageBinaryMetadata? fallbackMetadata,
+  TextInputFormatPreference preference = TextInputFormatPreference.auto,
+}) {
+  final headerParsed = parseTextExportHeader(rawText);
+  final effectiveMeta = fallbackMetadata ?? headerParsed.metadata;
+  final lines = _extractDataLines(rawText);
+  if (lines.isEmpty) {
+    throw const FormatException('النص الملصق فارغ أو لا يحتوي على بيانات ثنائية.');
+  }
+
+  final encoding = switch (preference) {
+    TextInputFormatPreference.auto => detectPastedTextFormat(
+        rawText,
+        expectedMetadata: effectiveMeta,
+      ),
+    TextInputFormatPreference.standardBinary => BinaryTextEncodingMode.standardBinary,
+    TextInputFormatPreference.columnPairCompressed => BinaryTextEncodingMode.columnPairCompressed,
+  };
+
+  if (encoding == BinaryTextEncodingMode.columnPairCompressed) {
+    final tokens = <String>[];
+    for (final line in lines) {
+      for (final token in line.split(RegExp(r'\s+'))) {
+        if (token.isEmpty) continue;
+        if (token != '0' && token != '1' && token != '0-' && token != '1-') {
+          throw FormatException(
+            'رمز غير صالح في التنسيق المضغوط: "$token". الرموز المسموحة هي: 1- و 0- و 1 و 0.',
+          );
+        }
+        tokens.add(token);
+      }
+    }
+
+    if (tokens.isEmpty) {
+      throw const FormatException('لم يتم العثور على أي رموز مضغوطة صالحة.');
+    }
+
+    final pairCount = tokens.length;
+    final maxBitsFromPairs = pairCount * 2;
+    final targetBits = effectiveMeta?.totalBits ?? maxBitsFromPairs;
+
+    if (effectiveMeta != null) {
+      final expectedPairs = (effectiveMeta.totalBits + 1) >> 1;
+      if (pairCount != expectedPairs) {
+        throw FormatException(
+          'عدد الصفوف المضغوطة ($pairCount) لا يطابق العدد المتوقع ($expectedPairs) لـ ${effectiveMeta.totalBits} بت.',
+        );
+      }
+    }
+
+    final outBytes = Uint8List((targetBits + 7) >> 3);
+    for (int i = 0; i < pairCount; i++) {
+      final tok = tokens[i];
+      final int b1;
+      final int b2;
+      if (tok == '1-') {
+        b1 = 1;
+        b2 = 1;
+      } else if (tok == '0-') {
+        b1 = 0;
+        b2 = 0;
+      } else if (tok == '1') {
+        b1 = 1;
+        b2 = 0;
+      } else {
+        b1 = 0;
+        b2 = 1;
+      }
+
+      if (b1 == 1) {
+        _setBitMsb(outBytes, i);
+      }
+      final col2Index = i + pairCount;
+      if (col2Index < targetBits && b2 == 1) {
+        _setBitMsb(outBytes, col2Index);
+      }
+    }
+
+    return DecodedTextPayload(
+      binaryBytes: outBytes,
+      detectedEncoding: BinaryTextEncodingMode.columnPairCompressed,
+      bitCount: targetBits,
+      pairCount: pairCount,
+      headerMetadata: headerParsed.metadata,
+    );
+  }
+
+  // Standard 0/1 binary text parsing
+  final bits = <int>[];
+  for (final line in lines) {
+    for (int i = 0; i < line.length; i++) {
+      final code = line.codeUnitAt(i);
+      if (code == 0x30) {
+        bits.add(0);
+      } else if (code == 0x31) {
+        bits.add(1);
+      } else if (code == 0x20 || code == 0x09 || code == 0x0D) {
+        continue;
+      } else {
+        throw FormatException(
+          'محرف غير صالح في البيانات الثنائية القياسية: "${line[i]}". يُسمح فقط بـ 0 و 1.',
+        );
+      }
+    }
+  }
+
+  if (bits.isEmpty) {
+    throw const FormatException('لم يتم العثور على أي بتات (0 أو 1) في النص الملصق.');
+  }
+
+  if (effectiveMeta != null && bits.length != effectiveMeta.totalBits) {
+    throw FormatException(
+      'عدد البتات الملصقة (${bits.length}) لا يطابق العدد المطلوب (${effectiveMeta.totalBits} بت) للأبعاد ${effectiveMeta.width}×${effectiveMeta.height}.',
+    );
+  }
+
+  final outBytes = Uint8List((bits.length + 7) >> 3);
+  for (int i = 0; i < bits.length; i++) {
+    if (bits[i] == 1) {
+      _setBitMsb(outBytes, i);
+    }
+  }
+
+  return DecodedTextPayload(
+    binaryBytes: outBytes,
+    detectedEncoding: BinaryTextEncodingMode.standardBinary,
+    bitCount: bits.length,
+    pairCount: 0,
+    headerMetadata: headerParsed.metadata,
+  );
 }
 
 /// Reads a [FileSource] in bounded chunks so large files are processed safely on-device.

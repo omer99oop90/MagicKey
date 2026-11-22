@@ -247,6 +247,108 @@ void main() {
       final fullTxt = utf8.decode(chunks.expand((c) => c).toList());
       expect(fullTxt, contains('width=10 height=15 format=gray8'));
     });
+
+    test('Column-pair compression encodes all 4 bit-pair combinations and round-trips losslessly', () {
+      // 1-byte (8 bits): 1010_1100 -> Col1 = 1010, Col2 = 1100
+      // Pairs: (1,1)->1-, (0,1)->0, (1,0)->1, (0,0)->0-
+      final raw = Uint8List.fromList([0xAC]); // 10101100
+      final meta = ImageBinaryMetadata(
+        width: 1,
+        height: 1,
+        pixelFormat: BinaryPixelFormat.gray8,
+        colorDepth: 8,
+        bitDepthPerChannel: 8,
+        channelOrder: 'L',
+        pixelCount: 1,
+        totalBytes: 1,
+        totalBits: 8,
+        paddingBits: 0,
+        isLossless: false,
+        sourceFileName: 'pair_test.png',
+        sourceColorMode: 'Grayscale',
+        crc32: computeCrc32(raw),
+        createdAt: '2026-11-22T00:00:00Z',
+      );
+
+      final page = formatCompressedBinaryPage(raw, totalBits: 8, pageIndex: 0);
+      expect(page.totalPairs, 4);
+      expect(page.hasOddPaddingBit, isFalse);
+      expect(page.rows.map((r) => r.token).toList(), equals(['1-', '0', '1', '0-']));
+
+      final compressedWithHeader = buildFullCompressedText(raw, meta, includeHeader: true);
+      expect(compressedWithHeader, contains('compression=col_pair_v1'));
+
+      final decoded = decodePastedTextToBinary(rawText: compressedWithHeader);
+      expect(decoded.detectedEncoding, BinaryTextEncodingMode.columnPairCompressed);
+      expect(decoded.bitCount, 8);
+      expect(decoded.pairCount, 4);
+      expect(decoded.binaryBytes, equals(raw));
+    });
+
+    test('Column-pair compression handles odd bit counts cleanly with lossless round-trip', () {
+      // 3x3 1-bit monochrome = 9 bits (odd), packed into 2 bytes
+      final rgba3x3 = Uint8List.fromList([
+        255, 255, 255, 255, 0, 0, 0, 255,       255, 255, 255, 255,
+        0, 0, 0, 255,       255, 255, 255, 255, 255, 255, 255, 255,
+        0, 0, 0, 255,       0, 0, 0, 255,       255, 255, 255, 255,
+      ]);
+      final conv = convertRgbaToBinary(
+        rgbaBytes: rgba3x3,
+        width: 3,
+        height: 3,
+        format: BinaryPixelFormat.mono1,
+        threshold: 128,
+      );
+      expect(conv.totalBits, 9);
+
+      final page = formatCompressedBinaryPage(conv.binaryBytes, totalBits: 9, pageIndex: 0);
+      expect(page.totalPairs, 5);
+      expect(page.hasOddPaddingBit, isTrue);
+
+      final compressedText = buildFullCompressedText(conv.binaryBytes, conv.metadata, includeHeader: true);
+      final decoded = decodePastedTextToBinary(rawText: compressedText);
+      expect(decoded.bitCount, 9);
+      expect(decoded.binaryBytes, equals(conv.binaryBytes));
+
+      final reconstructed = reconstructBinaryToRgba(
+        binaryData: decoded.binaryBytes,
+        metadata: decoded.headerMetadata!,
+      );
+      expect(reconstructed, equals(rgba3x3));
+    });
+
+    test('Auto-detects standard binary vs signed-column compressed text input', () {
+      final converted = convertRgbaToBinary(
+        rgbaBytes: sampleRgba,
+        width: 3,
+        height: 2,
+        format: BinaryPixelFormat.rgb888,
+      );
+
+      // 1. Compressed tokens without header (provided fallbackMetadata)
+      final compressedOnly = buildFullCompressedText(
+        converted.binaryBytes,
+        converted.metadata,
+        includeHeader: false,
+      );
+      expect(
+        detectPastedTextFormat(compressedOnly, expectedMetadata: converted.metadata),
+        BinaryTextEncodingMode.columnPairCompressed,
+      );
+      final decodedComp = decodePastedTextToBinary(
+        rawText: compressedOnly,
+        fallbackMetadata: converted.metadata,
+      );
+      expect(decodedComp.binaryBytes, equals(converted.binaryBytes));
+
+      // 2. Standard binary text (0/1 strings)
+      final stdChunks = streamTxtChunks(converted.binaryBytes, converted.metadata).toList();
+      final stdText = utf8.decode(stdChunks.expand((c) => c).toList());
+      expect(detectPastedTextFormat(stdText), BinaryTextEncodingMode.standardBinary);
+      final decodedStd = decodePastedTextToBinary(rawText: stdText);
+      expect(decodedStd.detectedEncoding, BinaryTextEncodingMode.standardBinary);
+      expect(decodedStd.binaryBytes, equals(converted.binaryBytes));
+    });
   });
 
   group('ImageToBinaryScreen Arabic RTL Widget Tests', () {
@@ -509,6 +611,137 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('تطابق تام 100%'), findsOneWidget);
+    });
+
+    testWidgets('Compressed column-pair preview -> copy -> paste decompression -> lossless PNG save',
+        (WidgetTester tester) async {
+      const safChannel = MethodChannel('com.magickey/saf');
+      final redPixelPng = Uint8List.fromList([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+        0x00, 0x03, 0x01, 0x01, 0x00, 0xC9, 0xFE, 0x92,
+        0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+        0x44, 0xAE, 0x42, 0x60, 0x82,
+      ]);
+
+      final Map<String, List<int>> savedFiles = {};
+      String? clipboardBuffer;
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(safChannel, (MethodCall call) async {
+        switch (call.method) {
+          case 'openDocument':
+            return {
+              'uri': 'content://test/red.png',
+              'name': 'red.png',
+              'size': redPixelPng.length,
+            };
+          case 'readUriChunk':
+            final args = call.arguments as Map;
+            final offset = (args['offset'] as num).toInt();
+            final length = (args['length'] as num).toInt();
+            if (offset >= redPixelPng.length) return Uint8List(0);
+            final end = (offset + length < redPixelPng.length) ? offset + length : redPixelPng.length;
+            return Uint8List.sublistView(redPixelPng, offset, end);
+          case 'createDocument':
+            final args = call.arguments as Map;
+            return 'content://export/${args['fileName']}';
+          case 'openUriWriteSession':
+            final args = call.arguments as Map;
+            final uri = args['uri'] as String;
+            savedFiles[uri] = <int>[];
+            return uri;
+          case 'writeUriSessionChunk':
+            final args = call.arguments as Map;
+            final sessionId = args['sessionId'] as String;
+            savedFiles[sessionId]?.addAll(args['bytes'] as Uint8List);
+            return true;
+          case 'closeUriWriteSession':
+            return true;
+          default:
+            return null;
+        }
+      });
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map;
+          clipboardBuffer = args['text'] as String?;
+          return null;
+        }
+        if (call.method == 'Clipboard.getData') {
+          return {'text': clipboardBuffer};
+        }
+        return null;
+      });
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(safChannel, null);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+      });
+
+      await tester.pumpWidget(_createTestApp(const ImageToBinaryScreen()));
+      await tester.pumpAndSettle();
+
+      Future<void> waitForFinder(Finder target) async {
+        for (int i = 0; i < 60; i++) {
+          if (target.evaluate().isNotEmpty) return;
+          await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 25)));
+          await tester.pump();
+        }
+      }
+
+      await tapVisible(tester, find.text('اختيار صورة من الجهاز'));
+      await tester.pump();
+      await waitForFinder(find.textContaining('1 × 1'));
+      await tester.pumpAndSettle();
+
+      await tapVisible(tester, find.text('تحويل إلى بيانات ثنائية'));
+      await tester.pumpAndSettle();
+
+      // Toggle Step 3 preview to compressed column-pair mode
+      await tapVisible(tester, find.text('مضغوط (1- / 0)'));
+      await tester.pumpAndSettle();
+      expect(find.text('12'), findsOneWidget); // 24 bits -> 12 compressed rows
+
+      // Copy full compressed representation (for red pixel 255,0,0 -> col1=111111110000, col2=000000000000 -> 8x '1', 4x '0-')
+      await tapVisible(tester, find.textContaining('نسخ المضغوط كاملاً للصق'));
+      await tester.pumpAndSettle();
+      expect(clipboardBuffer, isNotNull);
+      expect(clipboardBuffer, contains('compression=col_pair_v1'));
+
+      // Export compressed .txt as well
+      await tapVisible(tester, find.textContaining('تصدير التمثيل المضغوط'));
+      await tester.pumpAndSettle();
+      expect(savedFiles['content://export/red_rgb888_compressed.txt'], isNotEmpty);
+
+      // Switch to Binary -> Image tab, paste from clipboard, reconstruct & save PNG
+      await tapVisible(tester, find.text('ثنائي ← صورة'));
+      await tester.pumpAndSettle();
+
+      await tapVisible(tester, find.text('لصق من الحافظة'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('الكشف التلقائي: تنسيق مضغوط بعمود الإشارة'), findsOneWidget);
+
+      await tapVisible(tester, find.text('إعادة بناء الصورة'));
+      await tester.pump();
+      await waitForFinder(find.textContaining('تطابق تام 100%'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('تطابق تام 100%'), findsOneWidget);
+
+      // Save reconstructed PNG
+      await tapVisible(tester, find.text('حفظ الصورة المعاد بناؤها (PNG)'));
+      await tester.pumpAndSettle();
+      final savedPng = savedFiles['content://export/red_reconstructed.png'];
+      expect(savedPng, isNotNull);
+      expect(savedPng!.take(4).toList(), equals([0x89, 0x50, 0x4E, 0x47]));
     });
   });
 }

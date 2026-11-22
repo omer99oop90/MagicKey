@@ -36,8 +36,11 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
 
   // Paginated preview & row selection
   static const int _bytesPerPage = 64;
+  static const int _pairsPerPage = 64;
   int _currentPage = 0;
+  BinaryTextEncodingMode _previewEncoding = BinaryTextEncodingMode.standardBinary;
   final Set<int> _selectedRowOffsets = <int>{};
+  final Set<int> _selectedCompressedIndices = <int>{};
 
   // --- Binary -> Image reconstruction state ---
   bool _isLoadingBin = false;
@@ -47,14 +50,31 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
   Uint8List? _importedBinBytes;
   String? _importedMetaName;
   ImageBinaryMetadata? _importedMeta;
+  ImageBinaryMetadata? _activeReconstructionMeta;
+  BinaryTextEncodingMode? _lastReconstructedTextMode;
   String? _reconstructionError;
   Uint8List? _reconstructedPngBytes;
   PixelComparisonMetrics? _comparisonMetrics;
+
+  // Paste / Text input controllers
+  final TextEditingController _pasteController = TextEditingController();
+  final TextEditingController _manualWidthController = TextEditingController();
+  final TextEditingController _manualHeightController = TextEditingController();
+  BinaryPixelFormat _manualPixelFormat = BinaryPixelFormat.rgb888;
+  TextInputFormatPreference _pasteFormatPreference = TextInputFormatPreference.auto;
 
   @override
   void initState() {
     super.initState();
     _fileService = widget.fileService ?? FileService.instance;
+  }
+
+  @override
+  void dispose() {
+    _pasteController.dispose();
+    _manualWidthController.dispose();
+    _manualHeightController.dispose();
+    super.dispose();
   }
 
   String _formatBytes(int bytes) {
@@ -112,6 +132,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         _conversionResult = null;
         _currentPage = 0;
         _selectedRowOffsets.clear();
+        _selectedCompressedIndices.clear();
       });
     } catch (e) {
       _showMessage('تعذر تحميل الصورة: $e', isError: true);
@@ -169,6 +190,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         _conversionResult = result;
         _currentPage = 0;
         _selectedRowOffsets.clear();
+        _selectedCompressedIndices.clear();
       });
     } catch (e) {
       _showMessage('فشل تحويل الصورة: $e', isError: true);
@@ -218,6 +240,60 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
     );
   }
 
+  void _toggleCompressedSelection(int pairIndex) {
+    setState(() {
+      if (_selectedCompressedIndices.contains(pairIndex)) {
+        _selectedCompressedIndices.remove(pairIndex);
+      } else {
+        _selectedCompressedIndices.add(pairIndex);
+      }
+    });
+  }
+
+  void _selectAllCompressedOnPage(CompressedPreviewPage page) {
+    setState(() {
+      for (final row in page.rows) {
+        _selectedCompressedIndices.add(row.pairIndex);
+      }
+    });
+  }
+
+  Future<void> _copyCompressedPageOrSelected(
+    CompressedPreviewPage page, {
+    required bool selectedOnly,
+  }) async {
+    final rowsToCopy = selectedOnly
+        ? page.rows.where((r) => _selectedCompressedIndices.contains(r.pairIndex)).toList()
+        : page.rows;
+
+    if (rowsToCopy.isEmpty) {
+      _showMessage('يرجى تحديد صف واحد على الأقل للنسخ.', isError: true);
+      return;
+    }
+
+    final text = rowsToCopy.map((r) => r.token).join('\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    _showMessage(
+      selectedOnly
+          ? 'تم نسخ ${rowsToCopy.length} رمزاً مضغوطاً محدداً إلى الحافظة.'
+          : 'تم نسخ الصفحة المضغوطة (${rowsToCopy.length} صفاً) إلى الحافظة.',
+    );
+  }
+
+  Future<void> _copyFullCompressed(ImageBinaryConversionResult res) async {
+    try {
+      final text = buildFullCompressedText(
+        res.binaryBytes,
+        res.metadata,
+        includeHeader: true,
+      );
+      await Clipboard.setData(ClipboardData(text: text));
+      _showMessage('تم نسخ التمثيل المضغوط الكامل (${(res.totalBits + 1) >> 1} صفاً) مع الترويسة إلى الحافظة.');
+    } catch (e) {
+      _showMessage('$e', isError: true);
+    }
+  }
+
   Future<void> _showJumpToPageDialog(int totalPages) async {
     final controller = TextEditingController(text: '${_currentPage + 1}');
     final selected = await showDialog<int>(
@@ -258,6 +334,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
       setState(() {
         _currentPage = selected;
         _selectedRowOffsets.clear();
+        _selectedCompressedIndices.clear();
       });
     }
   }
@@ -340,6 +417,57 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
     }
   }
 
+  Future<void> _exportCompressedTxt() async {
+    final res = _conversionResult;
+    if (res == null) return;
+    final totalPairs = (res.totalBits + 1) >> 1;
+    if (totalPairs > kMaxCompressedTxtExportPairs) {
+      _showMessage('عدد الصفوف المضغوطة كبير جداً لتصدير .txt؛ استخدم .bin بدلاً منه.', isError: true);
+      return;
+    }
+
+    final base = _baseFileName(res.metadata.sourceFileName);
+    final suggestedName = '${base}_${res.metadata.pixelFormat.id}_compressed.txt';
+
+    try {
+      final uri = await _fileService.createDocument(
+        fileName: suggestedName,
+        mimeType: 'text/plain',
+      );
+      if (uri == null) return;
+
+      await _fileService.writeDocumentStream(
+        uri,
+        streamCompressedTxtChunks(res.binaryBytes, res.metadata),
+      );
+      _showMessage('تم تصدير التمثيل المضغوط (.compressed.txt) بنجاح.');
+    } catch (e) {
+      _showMessage('تعذر تصدير التمثيل المضغوط: $e', isError: true);
+    }
+  }
+
+  Future<void> _saveReconstructedPng() async {
+    final pngBytes = _reconstructedPngBytes;
+    final meta = _activeReconstructionMeta;
+    if (pngBytes == null || meta == null) return;
+
+    final base = _baseFileName(meta.sourceFileName);
+    final suggestedName = '${base}_reconstructed.png';
+
+    try {
+      final uri = await _fileService.createDocument(
+        fileName: suggestedName,
+        mimeType: 'image/png',
+      );
+      if (uri == null) return;
+
+      await _fileService.writeDocumentBytes(uri, pngBytes);
+      _showMessage('تم حفظ الصورة المعاد بناؤها (PNG) بنجاح.');
+    } catch (e) {
+      _showMessage('تعذر حفظ الصورة: $e', isError: true);
+    }
+  }
+
   // =========================================================================
   // Binary -> Image Reconstruction
   // =========================================================================
@@ -404,21 +532,73 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
     });
   }
 
-  Future<void> _reconstructImage() async {
-    final binBytes = _importedBinBytes;
-    final meta = _importedMeta;
-
-    if (binBytes == null) {
-      setState(() {
-        _reconstructionError = 'يرجى اختيار ملف البيانات الثنائية (.bin) أولاً.';
-      });
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.trim().isEmpty) {
+      _showMessage('الحافظة فارغة ولا تحتوي على نص.', isError: true);
       return;
     }
+    setState(() {
+      _pasteController.text = text;
+      _reconstructionError = null;
+    });
+    _showMessage('تم لصق البيانات من الحافظة.');
+  }
 
-    if (meta == null) {
+  void _useCurrentMetadataForPaste() {
+    final meta = _conversionResult?.metadata;
+    if (meta == null) return;
+    setState(() {
+      _importedMetaName = 'بيانات الصورة الحالية (${meta.width}×${meta.height})';
+      _importedMeta = meta;
+      _reconstructionError = null;
+    });
+  }
+
+  ImageBinaryMetadata? _buildManualMetadataIfValid() {
+    final w = int.tryParse(_manualWidthController.text.trim());
+    final h = int.tryParse(_manualHeightController.text.trim());
+    if (w == null || h == null || w <= 0 || h <= 0) return null;
+
+    final pixels = w * h;
+    final totalBits = switch (_manualPixelFormat) {
+      BinaryPixelFormat.rgb888 => pixels * 24,
+      BinaryPixelFormat.gray8 => pixels * 8,
+      BinaryPixelFormat.mono1 => pixels,
+    };
+    final totalBytes = switch (_manualPixelFormat) {
+      BinaryPixelFormat.rgb888 => pixels * 3,
+      BinaryPixelFormat.gray8 => pixels,
+      BinaryPixelFormat.mono1 => (pixels + 7) >> 3,
+    };
+
+    return ImageBinaryMetadata(
+      width: w,
+      height: h,
+      pixelFormat: _manualPixelFormat,
+      colorDepth: _manualPixelFormat.colorDepth,
+      bitDepthPerChannel: _manualPixelFormat.bitDepthPerChannel,
+      channelOrder: _manualPixelFormat.channelOrder,
+      pixelCount: pixels,
+      totalBytes: totalBytes,
+      totalBits: totalBits,
+      paddingBits: _manualPixelFormat == BinaryPixelFormat.mono1 ? (8 - (totalBits % 8)) % 8 : 0,
+      isLossless: _manualPixelFormat.isLosslessRgb,
+      sourceFileName: 'pasted_image',
+      sourceColorMode: 'Manual Text Metadata',
+      crc32: 0,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<void> _reconstructImage() async {
+    final pastedText = _pasteController.text.trim();
+    final hasPastedText = pastedText.isNotEmpty;
+
+    if (!hasPastedText && _importedBinBytes == null) {
       setState(() {
-        _reconstructionError =
-            'البيانات الثنائية وحدها لا تكفي لإعادة بناء الصورة. يرجى إرفاق ملف البيانات الوصفية (.meta.json) الذي يحتوي على الأبعاد وصيغة البكسل وترتيب القنوات.';
+        _reconstructionError = 'يرجى اختيار ملف البيانات الثنائية (.bin) أو لصق البيانات النصية أولاً.';
       });
       return;
     }
@@ -429,6 +609,38 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
     });
 
     try {
+      late final Uint8List binBytes;
+      late final ImageBinaryMetadata meta;
+      BinaryTextEncodingMode? reconstructedTextMode;
+
+      if (hasPastedText) {
+        final headerInfo = parseTextExportHeader(pastedText);
+        final resolvedMeta = _importedMeta ?? headerInfo.metadata ?? _buildManualMetadataIfValid();
+        if (resolvedMeta == null) {
+          throw const FormatException(
+            'البيانات النصية وحدها لا تكفي بدون الأبعاد وصيغة البكسل. يرجى تضمين ترويسة # Magic Key أو اختيار ملف .meta.json أو إدخال العرض والارتفاع يدوياً.',
+          );
+        }
+
+        final decodedText = decodePastedTextToBinary(
+          rawText: pastedText,
+          fallbackMetadata: resolvedMeta,
+          preference: _pasteFormatPreference,
+        );
+        binBytes = decodedText.binaryBytes;
+        meta = resolvedMeta;
+        reconstructedTextMode = decodedText.detectedEncoding;
+      } else {
+        if (_importedMeta == null) {
+          throw const FormatException(
+            'البيانات الثنائية وحدها لا تكفي لإعادة بناء الصورة. يرجى إرفاق ملف البيانات الوصفية (.meta.json) الذي يحتوي على الأبعاد وصيغة البكسل وترتيب القنوات.',
+          );
+        }
+        binBytes = _importedBinBytes!;
+        meta = _importedMeta!;
+        reconstructedTextMode = null;
+      }
+
       final rgba = meta.pixelCount > 65536
           ? await Isolate.run(() {
               return reconstructBinaryToRgba(binaryData: binBytes, metadata: meta);
@@ -454,13 +666,17 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
 
       if (!mounted) return;
       setState(() {
+        _activeReconstructionMeta = meta;
+        _lastReconstructedTextMode = reconstructedTextMode;
         _reconstructedPngBytes = pngBytes;
         _comparisonMetrics = comparison;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _reconstructionError = e.toString();
+        _reconstructionError = e is FormatException ? e.message : e.toString();
+        _activeReconstructionMeta = null;
+        _lastReconstructedTextMode = null;
         _reconstructedPngBytes = null;
         _comparisonMetrics = null;
       });
@@ -824,6 +1040,18 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                         : 'تصدير .txt غير متاح للصور الكبيرة (> 2 ميجابايت)',
                   ),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: ((res.totalBits + 1) >> 1) <= kMaxCompressedTxtExportPairs
+                      ? _exportCompressedTxt
+                      : null,
+                  icon: const Icon(Icons.compress_outlined),
+                  label: Text(
+                    ((res.totalBits + 1) >> 1) <= kMaxCompressedTxtExportPairs
+                        ? 'تصدير التمثيل المضغوط (.compressed.txt)'
+                        : 'تصدير .compressed.txt غير متاح (> 2 مليون صف)',
+                  ),
+                ),
                 const SizedBox(height: 10),
                 TextButton.icon(
                   onPressed: _loadCurrentConversionForReconstruction,
@@ -841,25 +1069,77 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
   Widget _buildBinaryPreviewContent(BuildContext context, ImageBinaryConversionResult res) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final page = formatBinaryPage(
-      res.binaryBytes,
-      pageIndex: _currentPage,
-      bytesPerPage: _bytesPerPage,
-      bytesPerRow: 4,
-      totalValidBits: res.metadata.pixelFormat == BinaryPixelFormat.mono1 ? res.totalBits : null,
-    );
+    final isCompressed = _previewEncoding == BinaryTextEncodingMode.columnPairCompressed;
+    final totalPairs = (res.totalBits + 1) >> 1;
+
+    final standardPage = isCompressed
+        ? null
+        : formatBinaryPage(
+            res.binaryBytes,
+            pageIndex: _currentPage,
+            bytesPerPage: _bytesPerPage,
+            bytesPerRow: 4,
+            totalValidBits: res.metadata.pixelFormat == BinaryPixelFormat.mono1 ? res.totalBits : null,
+          );
+
+    final compressedPage = isCompressed
+        ? formatCompressedBinaryPage(
+            res.binaryBytes,
+            totalBits: res.totalBits,
+            pageIndex: _currentPage,
+            pairsPerPage: _pairsPerPage,
+          )
+        : null;
+
+    final currentPageIndex = isCompressed ? compressedPage!.pageIndex : standardPage!.pageIndex;
+    final totalPages = isCompressed ? compressedPage!.totalPages : standardPage!.totalPages;
+    final selectedCount = isCompressed ? _selectedCompressedIndices.length : _selectedRowOffsets.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Standard vs Custom Column-Pair Compressed Preview Toggle
+        SegmentedButton<BinaryTextEncodingMode>(
+          segments: const [
+            ButtonSegment<BinaryTextEncodingMode>(
+              value: BinaryTextEncodingMode.standardBinary,
+              icon: Icon(Icons.view_stream_outlined, size: 16),
+              label: Text('ثنائي قياسي (0 و 1)', style: TextStyle(fontSize: 12)),
+            ),
+            ButtonSegment<BinaryTextEncodingMode>(
+              value: BinaryTextEncodingMode.columnPairCompressed,
+              icon: Icon(Icons.compress_outlined, size: 16),
+              label: Text('مضغوط (1- / 0)', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+          selected: <BinaryTextEncodingMode>{_previewEncoding},
+          onSelectionChanged: (selection) {
+            setState(() {
+              _previewEncoding = selection.first;
+              _currentPage = 0;
+              _selectedRowOffsets.clear();
+              _selectedCompressedIndices.clear();
+            });
+          },
+        ),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
             _buildInfoTile(context, 'إجمالي البايتات', _formatInt(res.totalBytes)),
             _buildInfoTile(context, 'إجمالي البتات', _formatInt(res.totalBits)),
-            _buildInfoTile(context, 'عمق اللون', '${res.metadata.colorDepth} بت'),
-            _buildInfoTile(context, 'ترتيب القنوات', res.metadata.channelOrder),
+            if (isCompressed) ...[
+              _buildInfoTile(context, 'الصفوف المضغوطة', _formatInt(totalPairs)),
+              _buildInfoTile(
+                context,
+                'حشو الطول الفردي',
+                (res.totalBits & 1) == 1 ? '1 بت إضافي' : 'لا يوجد',
+              ),
+            ] else ...[
+              _buildInfoTile(context, 'عمق اللون', '${res.metadata.colorDepth} بت'),
+              _buildInfoTile(context, 'ترتيب القنوات', res.metadata.channelOrder),
+            ],
           ],
         ),
         const SizedBox(height: 10),
@@ -868,7 +1148,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
             _buildLossBadge(context, isLossless: res.metadata.isLossless),
             const Spacer(),
             Text(
-              'صفحة ${page.pageIndex + 1} من ${page.totalPages}',
+              'صفحة ${currentPageIndex + 1} من $totalPages',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ],
@@ -897,24 +1177,26 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     tooltip: 'الصفحة السابقة',
-                    onPressed: page.pageIndex > 0
+                    onPressed: currentPageIndex > 0
                         ? () => setState(() {
-                              _currentPage = page.pageIndex - 1;
+                              _currentPage = currentPageIndex - 1;
                               _selectedRowOffsets.clear();
+                              _selectedCompressedIndices.clear();
                             })
                         : null,
                   ),
                   TextButton(
-                    onPressed: page.totalPages > 1 ? () => _showJumpToPageDialog(page.totalPages) : null,
-                    child: Text('${page.pageIndex + 1}/${page.totalPages}'),
+                    onPressed: totalPages > 1 ? () => _showJumpToPageDialog(totalPages) : null,
+                    child: Text('${currentPageIndex + 1}/$totalPages'),
                   ),
                   IconButton(
                     icon: const Icon(Icons.chevron_left),
                     tooltip: 'الصفحة التالية',
-                    onPressed: page.pageIndex + 1 < page.totalPages
+                    onPressed: currentPageIndex + 1 < totalPages
                         ? () => setState(() {
-                              _currentPage = page.pageIndex + 1;
+                              _currentPage = currentPageIndex + 1;
                               _selectedRowOffsets.clear();
+                              _selectedCompressedIndices.clear();
                             })
                         : null,
                   ),
@@ -924,12 +1206,21 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextButton(
-                    onPressed: () => _selectAllOnPage(page),
+                    onPressed: () {
+                      if (isCompressed) {
+                        _selectAllCompressedOnPage(compressedPage!);
+                      } else {
+                        _selectAllOnPage(standardPage!);
+                      }
+                    },
                     child: const Text('تحديد الصفحة', style: TextStyle(fontSize: 12)),
                   ),
-                  if (_selectedRowOffsets.isNotEmpty)
+                  if (selectedCount > 0)
                     TextButton(
-                      onPressed: () => setState(() => _selectedRowOffsets.clear()),
+                      onPressed: () => setState(() {
+                        _selectedRowOffsets.clear();
+                        _selectedCompressedIndices.clear();
+                      }),
                       child: const Text('مسح', style: TextStyle(fontSize: 12)),
                     ),
                 ],
@@ -939,7 +1230,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Bounded Binary Rows (LTR monospace inside RTL layout so bit offsets stay canonical)
+        // Bounded Rows (LTR monospace inside RTL layout)
         Directionality(
           textDirection: TextDirection.ltr,
           child: Container(
@@ -955,35 +1246,60 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
               scrollDirection: Axis.horizontal,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: page.rows.map((row) {
-                  final isSelected = _selectedRowOffsets.contains(row.byteOffset);
-                  return InkWell(
-                    onTap: () => _toggleRowSelection(row.byteOffset),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: isSelected ? theme.colorScheme.primary.withOpacity(0.18) : null,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        row.formattedLine,
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                children: isCompressed
+                    ? compressedPage!.rows.map((row) {
+                        final isSelected = _selectedCompressedIndices.contains(row.pairIndex);
+                        return InkWell(
+                          onTap: () => _toggleCompressedSelection(row.pairIndex),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isSelected ? theme.colorScheme.primary.withOpacity(0.18) : null,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              row.formattedLine,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList()
+                    : standardPage!.rows.map((row) {
+                        final isSelected = _selectedRowOffsets.contains(row.byteOffset);
+                        return InkWell(
+                          onTap: () => _toggleRowSelection(row.byteOffset),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isSelected ? theme.colorScheme.primary.withOpacity(0.18) : null,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              row.formattedLine,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
               ),
             ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'اضغط على أي صف لتحديده، ثم انسخ المحدد أو الصفحة الحالية (يتم عرض $_bytesPerPage بايت فقط في كل صفحة لحماية الذاكرة).',
+          isCompressed
+              ? 'التمثيل المضغوط يقسم البتات إلى نصفين (عمود 1 وعمود 2): المتطابق يُكتب 1- أو 0-، والمختلف يُكتب بت العمود الأول فقط (1 أو 0). يُعرض $_pairsPerPage صفاً في كل صفحة.'
+              : 'اضغط على أي صف لتحديده، ثم انسخ المحدد أو الصفحة الحالية (يتم عرض $_bytesPerPage بايت فقط في كل صفحة لحماية الذاكرة).',
           style: TextStyle(
             fontSize: 11,
             color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -994,30 +1310,51 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _selectedRowOffsets.isNotEmpty
-                    ? () => _copyPageOrSelected(page, selectedOnly: true)
+                onPressed: selectedCount > 0
+                    ? () => isCompressed
+                        ? _copyCompressedPageOrSelected(compressedPage!, selectedOnly: true)
+                        : _copyPageOrSelected(standardPage!, selectedOnly: true)
                     : null,
                 icon: const Icon(Icons.copy, size: 16),
-                label: Text('نسخ المحدد (${_selectedRowOffsets.length})'),
+                label: Text('نسخ المحدد ($selectedCount)'),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _copyPageOrSelected(page, selectedOnly: false),
+                onPressed: () => isCompressed
+                    ? _copyCompressedPageOrSelected(compressedPage!, selectedOnly: false)
+                    : _copyPageOrSelected(standardPage!, selectedOnly: false),
                 icon: const Icon(Icons.copy_all, size: 16),
                 label: const Text('نسخ الصفحة'),
               ),
             ),
           ],
         ),
+        if (isCompressed && totalPairs <= kMaxCopyFullCompressedPairs) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _copyFullCompressed(res),
+            icon: const Icon(Icons.content_copy_outlined, size: 16),
+            label: Text('نسخ المضغوط كاملاً للصق (${_formatInt(totalPairs)} صفاً)'),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildReconstructTab(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final meta = _importedMeta;
+    final pastedRaw = _pasteController.text.trim();
+    final hasPasted = pastedRaw.isNotEmpty;
+    final headerParsed = hasPasted ? parseTextExportHeader(pastedRaw) : (metadata: null, compression: null);
+    final effectivePasteMeta = meta ?? headerParsed.metadata;
+    final autoDetectedPasteMode = hasPasted
+        ? detectPastedTextFormat(pastedRaw, expectedMetadata: effectivePasteMeta)
+        : null;
+    final resultMeta = _activeReconstructionMeta ?? meta;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1025,7 +1362,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         _buildSectionCard(
           context: context,
           stepNumber: '1',
-          title: 'استيراد الملف الثنائي (.bin) والبيانات الوصفية (.meta.json)',
+          title: 'استيراد الملفات أو لصق البيانات (ثنائي / مضغوط 1-)',
           icon: Icons.file_open_outlined,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1053,23 +1390,193 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                       : 'البيانات الوصفية: $_importedMetaName',
                 ),
               ),
-              if (meta != null) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Divider(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'أو لصق البيانات النصية مباشرة',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Divider(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: TextField(
+                  controller: _pasteController,
+                  minLines: 4,
+                  maxLines: 8,
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  decoration: const InputDecoration(
+                    hintText: '1-\n0\n0-\n1  OR  11111111 00000000 ...',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _pasteFromClipboard,
+                    icon: const Icon(Icons.content_paste, size: 16),
+                    label: const Text('لصق من الحافظة'),
+                  ),
+                  if (hasPasted)
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        _pasteController.clear();
+                        _reconstructionError = null;
+                      }),
+                      icon: const Icon(Icons.clear, size: 16),
+                      label: const Text('مسح النص'),
+                    ),
+                  if (_conversionResult != null && _importedMeta == null)
+                    TextButton.icon(
+                      onPressed: _useCurrentMetadataForPaste,
+                      icon: const Icon(Icons.link, size: 16),
+                      label: const Text('استخدام بيانات الصورة الحالية'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('تنسيق النص:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ChoiceChip(
+                    label: const Text('تلقائي', style: TextStyle(fontSize: 11)),
+                    selected: _pasteFormatPreference == TextInputFormatPreference.auto,
+                    onSelected: (_) => setState(() => _pasteFormatPreference = TextInputFormatPreference.auto),
+                  ),
+                  ChoiceChip(
+                    label: const Text('ثنائي (0/1)', style: TextStyle(fontSize: 11)),
+                    selected: _pasteFormatPreference == TextInputFormatPreference.standardBinary,
+                    onSelected: (_) =>
+                        setState(() => _pasteFormatPreference = TextInputFormatPreference.standardBinary),
+                  ),
+                  ChoiceChip(
+                    label: const Text('مضغوط (1-/0)', style: TextStyle(fontSize: 11)),
+                    selected: _pasteFormatPreference == TextInputFormatPreference.columnPairCompressed,
+                    onSelected: (_) =>
+                        setState(() => _pasteFormatPreference = TextInputFormatPreference.columnPairCompressed),
+                  ),
+                ],
+              ),
+              if (autoDetectedPasteMode != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  autoDetectedPasteMode == BinaryTextEncodingMode.columnPairCompressed
+                      ? 'الكشف التلقائي: تنسيق مضغوط بعمود الإشارة (1- / 0)'
+                      : 'الكشف التلقائي: بيانات ثنائية قياسية (0 و 1)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+              if (hasPasted && effectivePasteMeta == null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'أدخل الأبعاد وصيغة البكسل لإعادة البناء عند عدم وجود ترويسة أو ملف .meta.json:',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _manualWidthController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'العرض',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _manualHeightController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'الارتفاع',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<BinaryPixelFormat>(
+                        value: _manualPixelFormat,
+                        isDense: true,
+                        decoration: const InputDecoration(
+                          labelText: 'الصيغة',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: BinaryPixelFormat.values
+                            .map(
+                              (f) => DropdownMenuItem(
+                                value: f,
+                                child: Text(f.arabicShortLabel, style: const TextStyle(fontSize: 12)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _manualPixelFormat = v);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (effectivePasteMeta != null) ...[
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _buildInfoTile(context, 'الأبعاد', '${meta.width} × ${meta.height}'),
-                    _buildInfoTile(context, 'الصيغة', meta.pixelFormat.arabicShortLabel),
-                    _buildInfoTile(context, 'عمق اللون', '${meta.colorDepth} بت'),
-                    _buildInfoTile(context, 'ترتيب القنوات', meta.channelOrder),
-                    if (meta.threshold != null)
-                      _buildInfoTile(context, 'العتبة', '${meta.threshold}'),
-                    _buildInfoTile(context, 'CRC-32', meta.crc32Hex),
+                    _buildInfoTile(context, 'الأبعاد', '${effectivePasteMeta.width} × ${effectivePasteMeta.height}'),
+                    _buildInfoTile(context, 'الصيغة', effectivePasteMeta.pixelFormat.arabicShortLabel),
+                    _buildInfoTile(context, 'عمق اللون', '${effectivePasteMeta.colorDepth} بت'),
+                    _buildInfoTile(context, 'ترتيب القنوات', effectivePasteMeta.channelOrder),
+                    if (effectivePasteMeta.threshold != null)
+                      _buildInfoTile(context, 'العتبة', '${effectivePasteMeta.threshold}'),
+                    if (effectivePasteMeta.crc32 != 0)
+                      _buildInfoTile(context, 'CRC-32', effectivePasteMeta.crc32Hex),
                   ],
                 ),
                 const SizedBox(height: 8),
-                _buildLossBadge(context, isLossless: meta.isLossless),
+                _buildLossBadge(context, isLossless: effectivePasteMeta.isLossless),
               ],
               const SizedBox(height: 12),
               ElevatedButton.icon(
@@ -1106,7 +1613,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
           ),
         ),
 
-        if (_reconstructedPngBytes != null && meta != null)
+        if (_reconstructedPngBytes != null && resultMeta != null)
           _buildSectionCard(
             context: context,
             stepNumber: '2',
@@ -1115,6 +1622,19 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (_lastReconstructedTextMode != null) ...[
+                  Text(
+                    _lastReconstructedTextMode == BinaryTextEncodingMode.columnPairCompressed
+                        ? 'تمت إعادة البناء من التمثيل المضغوط (1- / 0) بعد فك ضغط العمودين بدقة تامة.'
+                        : 'تمت إعادة البناء من النص الثنائي القياسي (0 و 1).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (_comparisonMetrics != null) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -1137,7 +1657,7 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                         Text(
                           _comparisonMetrics!.isExactRgbMatch
                               ? 'تطابق تام 100% في قيم قنوات RGB (0 اختلافات — إعادة بناء بدون فقدان)'
-                              : 'اختلافات متوقعة نتيجة التحويل الفقداني (${meta.pixelFormat.arabicShortLabel})',
+                              : 'اختلافات متوقعة نتيجة التحويل الفقداني (${resultMeta.pixelFormat.arabicShortLabel})',
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
@@ -1155,8 +1675,8 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                 // Reconstructed image preview (and Original if loaded for direct comparison)
                 if (_selectedImageFileBytes != null &&
                     _decodedImage != null &&
-                    _decodedImage!.width == meta.width &&
-                    _decodedImage!.height == meta.height)
+                    _decodedImage!.width == resultMeta.width &&
+                    _decodedImage!.height == resultMeta.height)
                   Row(
                     children: [
                       Expanded(
@@ -1179,10 +1699,16 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
                 else
                   _buildComparisonImageBox(
                     context,
-                    title: 'الصورة المعاد بناؤها (${meta.width} × ${meta.height})',
+                    title: 'الصورة المعاد بناؤها (${resultMeta.width} × ${resultMeta.height})',
                     bytes: _reconstructedPngBytes!,
                     height: 240,
                   ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _saveReconstructedPng,
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('حفظ الصورة المعاد بناؤها (PNG)'),
+                ),
               ],
             ),
           ),
