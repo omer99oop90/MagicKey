@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magickey/l10n/app_localizations.dart';
+import 'package:magickey/screens/home_screen.dart';
 import 'package:magickey/screens/image_to_binary_screen.dart';
 import 'package:magickey/services/image_binary_codec.dart';
 
@@ -263,17 +265,114 @@ void main() {
       expect(find.text('اختيار صورة من الجهاز'), findsOneWidget);
 
       // Switch to 1-bit monochrome mode and confirm threshold slider appears
-      await tester.tap(find.text('أبيض وأسود (1 بت)'));
+      final monoFinder = find.text('أبيض وأسود (1 بت)');
+      await tester.ensureVisible(monoFinder);
+      await tester.tap(monoFinder);
       await tester.pumpAndSettle();
       expect(find.text('عتبة الأبيض والأسود:'), findsOneWidget);
       expect(find.byType(Slider), findsOneWidget);
 
       // Switch to reconstruction tab and verify it guards against missing .bin / metadata
-      await tester.tap(find.text('ثنائي ← صورة'));
+      final reconTabFinder = find.text('ثنائي ← صورة');
+      await tester.ensureVisible(reconTabFinder);
+      await tester.tap(reconTabFinder);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('إعادة بناء الصورة'));
+      final reconBtnFinder = find.text('إعادة بناء الصورة');
+      await tester.ensureVisible(reconBtnFinder);
+      await tester.tap(reconBtnFinder);
       await tester.pumpAndSettle();
       expect(find.textContaining('يرجى اختيار ملف البيانات الثنائية (.bin)'), findsOneWidget);
+    });
+
+    testWidgets('HomeScreen provides direct navigation entry to ImageToBinaryScreen',
+        (WidgetTester tester) async {
+      const safChannel = MethodChannel('com.magickey/saf');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(safChannel, (MethodCall call) async => null);
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(safChannel, null);
+      });
+
+      await tester.pumpWidget(
+        _createTestApp(
+          HomeScreen(
+            onToggleTheme: () {},
+            onLocaleChange: (_) {},
+            currentLocale: const Locale('en'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final entryFinder = find.text('Image to Binary');
+      expect(entryFinder, findsOneWidget);
+      await tester.ensureVisible(entryFinder);
+      await tester.tap(entryFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ImageToBinaryScreen), findsOneWidget);
+      expect(find.text('تحويل الصورة إلى ثنائي'), findsOneWidget);
+    });
+
+    testWidgets('Actual sample.png image RGB conversion and lossless pixel reconstruction produces 0 differences',
+        (WidgetTester tester) async {
+      final sampleFile = File('../manual_test_files/sample.png');
+      if (!sampleFile.existsSync()) {
+        return;
+      }
+
+      late DecodedImageInfo decoded;
+      late Uint8List reDecodedRgba;
+      late ImageBinaryConversionResult converted;
+
+      await tester.runAsync(() async {
+        final fileBytes = await sampleFile.readAsBytes();
+        decoded = await decodeImageBytesToRgba(
+          fileBytes: fileBytes,
+          fileName: 'sample.png',
+          fileSizeBytes: fileBytes.length,
+        );
+
+        converted = convertRgbaToBinary(
+          rgbaBytes: decoded.rgbaBytes,
+          width: decoded.width,
+          height: decoded.height,
+          format: BinaryPixelFormat.rgb888,
+          sourceFileName: decoded.fileName,
+          sourceColorMode: '${decoded.detectedFormat} • ${decoded.colorMode}',
+          sourceHadAlpha: decoded.hasTransparentPixels,
+        );
+
+        final importedMeta = ImageBinaryMetadata.fromJsonString(converted.metadata.toJsonString());
+        final reconstructedRgba = reconstructBinaryToRgba(
+          binaryData: converted.binaryBytes,
+          metadata: importedMeta,
+        );
+        final reconstructedPng = await encodeRgbaToPngBytes(
+          rgbaBytes: reconstructedRgba,
+          width: importedMeta.width,
+          height: importedMeta.height,
+        );
+        final reDecoded = await decodeImageBytesToRgba(
+          fileBytes: reconstructedPng,
+          fileName: 'reconstructed.png',
+          fileSizeBytes: reconstructedPng.length,
+        );
+        reDecodedRgba = reDecoded.rgbaBytes;
+      });
+
+      final metrics = compareRgbaBuffers(
+        decoded.rgbaBytes,
+        reDecodedRgba,
+        decoded.width,
+        decoded.height,
+      );
+      expect(decoded.width, greaterThan(0));
+      expect(decoded.height, greaterThan(0));
+      expect(metrics.isExactRgbMatch, isTrue);
+      expect(metrics.differingRgbPixels, 0);
+      expect(metrics.maxChannelDiff, 0);
     });
 
     testWidgets('End-to-end SAF workflow: select PNG, convert RGB, export .bin/.meta.json, re-import & verify lossless match',
@@ -363,42 +462,63 @@ void main() {
       await tester.pumpWidget(_createTestApp(const ImageToBinaryScreen()));
       await tester.pumpAndSettle();
 
-      await tester.runAsync(() async {
-        await tester.tap(find.text('اختيار صورة من الجهاز'));
-        await Future.delayed(const Duration(milliseconds: 50));
-      });
+      Future<void> waitForFinder(Finder target) async {
+        for (int i = 0; i < 60; i++) {
+          if (target.evaluate().isNotEmpty) return;
+          await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 25)));
+          await tester.pump();
+        }
+      }
+
+      await tester.tap(find.text('اختيار صورة من الجهاز'));
+      await tester.pump();
+      await waitForFinder(find.textContaining('1 × 1'));
       await tester.pumpAndSettle();
       expect(find.textContaining('1 × 1'), findsOneWidget);
 
-      await tester.tap(find.text('تحويل إلى بيانات ثنائية'));
+      final convertBtn = find.text('تحويل إلى بيانات ثنائية');
+      await tester.ensureVisible(convertBtn);
+      await tester.tap(convertBtn);
       await tester.pumpAndSettle();
       expect(find.text('24'), findsOneWidget); // 24 bits
 
       // Export .bin and .meta.json
-      await tester.tap(find.textContaining('تصدير البيانات الفعلية (.bin'));
+      final exportBinBtn = find.textContaining('تصدير البيانات الفعلية (.bin');
+      await tester.ensureVisible(exportBinBtn);
+      await tester.tap(exportBinBtn);
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('تصدير البيانات الوصفية المطلوبة'));
+
+      final exportMetaBtn = find.textContaining('تصدير البيانات الوصفية المطلوبة');
+      await tester.ensureVisible(exportMetaBtn);
+      await tester.tap(exportMetaBtn);
       await tester.pumpAndSettle();
 
       expect(writtenStreams['content://export/out.bin'], equals([255, 0, 0]));
       expect(writtenStreams['content://export/out.meta.json'], isNotEmpty);
 
       // Re-import exported .bin and .meta.json on reconstruction tab
-      await tester.tap(find.text('ثنائي ← صورة'));
+      final reconTab = find.text('ثنائي ← صورة');
+      await tester.ensureVisible(reconTab);
+      await tester.tap(reconTab);
       await tester.pumpAndSettle();
 
       openMode = 'bin';
-      await tester.tap(find.text('اختيار ملف .bin'));
+      final pickBinBtn = find.text('اختيار ملف .bin');
+      await tester.ensureVisible(pickBinBtn);
+      await tester.tap(pickBinBtn);
       await tester.pumpAndSettle();
 
       openMode = 'meta';
-      await tester.tap(find.text('اختيار ملف البيانات الوصفية (.meta.json)'));
+      final pickMetaBtn = find.text('اختيار ملف البيانات الوصفية (.meta.json)');
+      await tester.ensureVisible(pickMetaBtn);
+      await tester.tap(pickMetaBtn);
       await tester.pumpAndSettle();
 
-      await tester.runAsync(() async {
-        await tester.tap(find.text('إعادة بناء الصورة'));
-        await Future.delayed(const Duration(milliseconds: 50));
-      });
+      final reconBtn = find.text('إعادة بناء الصورة');
+      await tester.ensureVisible(reconBtn);
+      await tester.tap(reconBtn);
+      await tester.pump();
+      await waitForFinder(find.textContaining('تطابق تام 100%'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('تطابق تام 100%'), findsOneWidget);

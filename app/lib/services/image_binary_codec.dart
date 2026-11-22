@@ -767,17 +767,15 @@ BinaryPreviewPage formatBinaryPage(
     final rowEnd = math.min(endByte, rowOffset + bytesPerRow);
     final sb = StringBuffer();
     for (int b = rowOffset; b < rowEnd; b++) {
+      final remainingBits = totalValidBits != null ? (totalValidBits - (b * 8)) : 8;
+      if (remainingBits <= 0) break;
       if (b > rowOffset) sb.write(' ');
       final fullBits = _kByteToBitsTable[bytes[b]];
-      if (totalValidBits != null) {
-        final remainingBits = totalValidBits - (b * 8);
-        if (remainingBits <= 0) break;
-        if (remainingBits < 8) {
-          sb.write(fullBits.substring(0, remainingBits));
-          continue;
-        }
+      if (remainingBits < 8) {
+        sb.write(fullBits.substring(0, remainingBits));
+      } else {
+        sb.write(fullBits);
       }
-      sb.write(fullBits);
     }
 
     rows.add(
