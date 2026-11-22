@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:isolate';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -49,7 +48,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
   String? _importedMetaName;
   ImageBinaryMetadata? _importedMeta;
   String? _reconstructionError;
-  Uint8List? _reconstructedRgbaBytes;
   Uint8List? _reconstructedPngBytes;
   PixelComparisonMetrics? _comparisonMetrics;
 
@@ -359,7 +357,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         _importedBinBytes = bytes;
         _reconstructionError = null;
         _reconstructedPngBytes = null;
-        _reconstructedRgbaBytes = null;
         _comparisonMetrics = null;
       });
     } catch (e) {
@@ -383,7 +380,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
         _importedMeta = meta;
         _reconstructionError = null;
         _reconstructedPngBytes = null;
-        _reconstructedRgbaBytes = null;
         _comparisonMetrics = null;
       });
     } catch (e) {
@@ -404,7 +400,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
       _importedMeta = res.metadata;
       _reconstructionError = null;
       _reconstructedPngBytes = null;
-      _reconstructedRgbaBytes = null;
       _comparisonMetrics = null;
     });
   }
@@ -459,7 +454,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
 
       if (!mounted) return;
       setState(() {
-        _reconstructedRgbaBytes = rgba;
         _reconstructedPngBytes = pngBytes;
         _comparisonMetrics = comparison;
       });
@@ -468,7 +462,6 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
       setState(() {
         _reconstructionError = e.toString();
         _reconstructedPngBytes = null;
-        _reconstructedRgbaBytes = null;
         _comparisonMetrics = null;
       });
     } finally {

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import '../ffi/core_bindings.dart';
 import '../models/detection_result.dart';
