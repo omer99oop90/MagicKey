@@ -1238,32 +1238,38 @@ class _ImageToBinaryScreenState extends State<ImageToBinaryScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 680),
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment<int>(
-                        value: 0,
-                        icon: Icon(Icons.memory_outlined, size: 18),
-                        label: Text('صورة ← ثنائي'),
-                      ),
-                      ButtonSegment<int>(
-                        value: 1,
-                        icon: Icon(Icons.restore_page_outlined, size: 18),
-                        label: Text('ثنائي ← صورة'),
-                      ),
-                    ],
-                    selected: <int>{_activeTab},
-                    onSelectionChanged: (selection) {
-                      setState(() => _activeTab = selection.first);
-                    },
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment<int>(
+                          value: 0,
+                          icon: Icon(Icons.memory_outlined, size: 18),
+                          label: Text('صورة ← ثنائي'),
+                        ),
+                        ButtonSegment<int>(
+                          value: 1,
+                          icon: Icon(Icons.restore_page_outlined, size: 18),
+                          label: Text('ثنائي ← صورة'),
+                        ),
+                      ],
+                      selected: <int>{_activeTab},
+                      onSelectionChanged: (selection) {
+                        setState(() => _activeTab = selection.first);
+                      },
+                    ),
                   ),
-                  const SizedBox(height: 14),
-                  if (_activeTab == 0)
-                    _buildConvertTab(context)
-                  else
-                    _buildReconstructTab(context),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+                      child: _activeTab == 0
+                          ? _buildConvertTab(context)
+                          : _buildReconstructTab(context),
+                    ),
+                  ),
                 ],
               ),
             ),
